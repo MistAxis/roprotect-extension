@@ -71,6 +71,10 @@
 	&.error {
 		color: var(--color-status-unsafe);
 	}
+
+	&.copied {
+		color: var(--color-success);
+	}
 }
 
 @utility discord-expand-all-btn {
@@ -249,4 +253,9 @@
 	&:hover {
 		color: var(--color-text-secondary);
 	}
+}
+
+@utility discord-quarry-flag {
+	@apply inline-flex items-center gap-1;
+	color: var(--color-status-unsafe);
 }

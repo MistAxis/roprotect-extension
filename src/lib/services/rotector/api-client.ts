@@ -226,6 +226,10 @@ class RotectorApiClient {
 		});
 	}
 
+	async lookupQuarry(ids: string[]): Promise<Record<string, string[] | null>> {
+		return sendMessage<Record<string, string[] | null>>(API_ACTIONS.LOOKUP_QUARRY, { ids });
+	}
+
 	async lookupOutfitsByName(
 		userId: string | number,
 		names: string[]

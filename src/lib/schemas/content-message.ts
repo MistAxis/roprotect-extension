@@ -121,6 +121,15 @@ const ContentMessageSchema = v.variant('action', [
 		clientId: ClientId
 	}),
 	v.object({
+		action: v.literal(API_ACTIONS.LOOKUP_QUARRY),
+		ids: v.pipe(
+			v.array(v.pipe(v.string(), v.regex(/^\d{5,25}$/))),
+			v.minLength(1),
+			v.maxLength(500)
+		),
+		clientId: ClientId
+	}),
+	v.object({
 		action: v.literal(API_ACTIONS.LOOKUP_OUTFITS_BY_NAME),
 		userId: UserId,
 		names: v.pipe(v.array(v.string()), v.minLength(1)),

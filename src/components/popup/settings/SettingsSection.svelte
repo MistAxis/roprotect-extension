@@ -21,7 +21,11 @@
 	import { AGE_PRESETS, SETTING_CATEGORIES, SETTINGS_KEYS } from '@/lib/types/settings';
 	import { downloadDebugLogs } from '@/lib/utils/logging/log-export';
 	import { logger } from '@/lib/utils/logging/logger';
-	import { hasTranslatePermission, requestTranslatePermission } from '@/lib/utils/permissions';
+	import {
+		hasTranslatePermission,
+		requestPermissionsForOrigins,
+		requestTranslatePermission
+	} from '@/lib/utils/permissions';
 	import { showError, showSuccess, showWarning } from '@/lib/stores/toast';
 
 	const IS_DEV = import.meta.env.USE_DEV_API === 'true';
@@ -36,6 +40,9 @@
 	let { onNavigateToCustomApis, onNavigateToMembership, onNavigateToPerformance }: Props = $props();
 
 	let developerExpanded = $state(false);
+	let quarryExpanded = $state(false);
+	let quarryUrl = $state($settings[SETTINGS_KEYS.QUARRY_URL]);
+	let quarryKey = $state($settings[SETTINGS_KEYS.QUARRY_KEY]);
 	let togglingApiId = $state<string | null>(null);
 
 	const userApis = $derived($customApis.filter((api) => !api.isSystem));
@@ -158,6 +165,29 @@
 			}
 		}
 	});
+
+	async function handleSaveQuarry() {
+		const trimmedUrl = quarryUrl.trim();
+		let origin = '';
+		if (trimmedUrl) {
+			try {
+				const parsed = new URL(trimmedUrl);
+				if (parsed.protocol !== 'https:') throw new Error('not https');
+				origin = parsed.origin;
+			} catch {
+				showError($_('settings_quarry_invalid_url'));
+				return;
+			}
+			if (!(await requestPermissionsForOrigins([`${origin}/*`]))) {
+				showWarning($_('settings_quarry_permission_denied'));
+				return;
+			}
+		}
+		await updateSetting(SETTINGS_KEYS.QUARRY_URL, origin);
+		await updateSetting(SETTINGS_KEYS.QUARRY_KEY, quarryKey.trim());
+		quarryUrl = origin;
+		showSuccess($_('settings_quarry_saved'));
+	}
 </script>
 
 {#snippet labeledRow(
@@ -338,6 +368,52 @@
 	</SignalSection>
 
 	<div class="popup-divider"></div>
+
+	<section class="popup-section">
+		<button
+			class="settings-section-collapser"
+			class:expanded={quarryExpanded}
+			aria-expanded={quarryExpanded}
+			onclick={() => (quarryExpanded = !quarryExpanded)}
+			type="button"
+		>
+			<h2 class="popup-section-title">{$_('settings_section_quarry')}</h2>
+			<ChevronDown class="settings-section-chevron" size={14} strokeWidth={2.25} />
+		</button>
+
+		{#if quarryExpanded}
+			<div class="popup-section-body">
+				<p class="settings-row-label">{$_('settings_quarry_help')}</p>
+				<label class="settings-row-label" for="quarry-url">
+					{$_('settings_quarry_url_label')}
+				</label>
+				<input
+					id="quarry-url"
+					class="form-input"
+					autocomplete="off"
+					placeholder={$_('settings_quarry_url_placeholder')}
+					spellcheck="false"
+					type="url"
+					bind:value={quarryUrl}
+				/>
+				<label class="settings-row-label" for="quarry-key">
+					{$_('settings_quarry_key_label')}
+				</label>
+				<input
+					id="quarry-key"
+					class="form-input"
+					autocomplete="off"
+					placeholder="qk_..."
+					spellcheck="false"
+					type="password"
+					bind:value={quarryKey}
+				/>
+				<button class="settings-nav-button" onclick={handleSaveQuarry} type="button">
+					<span class="settings-nav-button-text">{$_('settings_quarry_save')}</span>
+				</button>
+			</div>
+		{/if}
+	</section>
 
 	<section class="popup-section">
 		<button

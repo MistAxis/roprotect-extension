@@ -124,6 +124,7 @@ export const API_ACTIONS = {
 	TRANSLATE_TEXT: 'translateText',
 	GET_GROUP_TRACKED_USERS: 'getGroupTrackedUsers',
 	LOOKUP_ROBLOX_USER_DISCORD: 'lookupRobloxUserDiscord',
+	LOOKUP_QUARRY: 'lookupQuarry',
 	EXPORT_GROUP_TRACKED_USERS: 'exportGroupTrackedUsers',
 	LOOKUP_OUTFITS_BY_NAME: 'lookupOutfitsByName',
 	LOOKUP_OUTFITS_BY_ID: 'lookupOutfitsById',

@@ -13,6 +13,7 @@
 		ChevronsUpDown,
 		Copy,
 		Check,
+		ShieldAlert,
 		X
 	} from '@lucide/svelte';
 	import { _ } from 'svelte-i18n';
@@ -22,6 +23,7 @@
 	import ExtLink from '@/components/ui/ExtLink.svelte';
 	import CanvasText from '@/components/ui/CanvasText.svelte';
 	import { getDiscordData } from '@/lib/services/third-party/discord-data';
+	import { getQuarryServers } from '@/lib/services/third-party/quarry';
 	import type { DiscordAccountInfo, RobloxAltAccount } from '@/lib/types/api';
 	import { logger } from '@/lib/utils/logging/logger';
 	import { formatShortDate, formatTimestamp } from '@/lib/utils/time';
@@ -53,7 +55,12 @@
 	let expandedAccounts = new SvelteSet<string>();
 	let copySuccess = $state(false);
 	let copyError = $state(false);
+	let quarryServers = $state<Record<string, string[] | null>>({});
+	let copiedId = $state<string | null>(null);
 
+	const quarryFlaggedCount = $derived(
+		discordAccounts.filter((account) => quarryServers[account.id]).length
+	);
 	const hasData = $derived(discordAccounts.length > 0 || altAccounts.length > 0);
 	const totalServers = $derived(
 		discordAccounts.reduce((sum, account) => sum + account.servers.length, 0)
@@ -77,6 +84,19 @@
 				return name && url ? { code: source, name, url } : null;
 			})
 			.filter((info): info is NonNullable<typeof info> => info !== null);
+	}
+
+	async function handleCopyId(event: Event, accountId: string) {
+		event.stopPropagation();
+		try {
+			await navigator.clipboard.writeText(accountId);
+			copiedId = accountId;
+			setTimeout(() => {
+				if (copiedId === accountId) copiedId = null;
+			}, 2000);
+		} catch (error_) {
+			logger.error('Failed to copy Discord ID:', error_);
+		}
 	}
 
 	function toggleAccount(accountId: string) {
@@ -177,7 +197,19 @@
 				isLoading = true;
 				const result = await getDiscordData(userId);
 				if (loadId !== latestDiscordLoadId) return;
-				discordAccounts = result.discordAccounts.filter((account) => account.servers.length > 0);
+				// Quarry knows servers Rotector has not logged, so look up every linked ID
+				// and keep accounts it matched even when Rotector lists no servers for them.
+				let matches: Record<string, string[] | null> = {};
+				try {
+					matches = await getQuarryServers(result.discordAccounts.map((a) => a.id));
+				} catch (quarryError) {
+					logger.warn('Quarry lookup failed:', quarryError);
+				}
+				if (loadId !== latestDiscordLoadId) return;
+				quarryServers = matches;
+				discordAccounts = result.discordAccounts.filter(
+					(account) => account.servers.length > 0 || matches[account.id]
+				);
 				altAccounts = result.altAccounts;
 			} catch (error_) {
 				logger.error('Failed to load Discord data:', error_);
@@ -245,6 +277,20 @@
 								? 'tooltip_discord_alts_singular'
 								: 'tooltip_discord_alts_plural',
 							{ values: { 0: altAccounts.length } }
+						)}
+					/>
+				</span>
+			{/if}
+			{#if quarryFlaggedCount > 0}
+				<span class="discord-summary-separator"></span>
+				<span class="discord-summary-item discord-quarry-flag">
+					<ShieldAlert size={12} />
+					<CanvasText
+						text={$_(
+							quarryFlaggedCount === 1
+								? 'tooltip_discord_quarry_flagged_singular'
+								: 'tooltip_discord_quarry_flagged_plural',
+							{ values: { 0: quarryFlaggedCount } }
 						)}
 					/>
 				</span>
@@ -318,6 +364,34 @@
 					<span class="discord-account-id">
 						{account.id}
 					</span>
+					<span
+						class="discord-copy-btn"
+						class:copied={copiedId === account.id}
+						aria-label={$_('tooltip_discord_copy_id')}
+						onclick={(e: MouseEvent) => handleCopyId(e, account.id)}
+						onkeydown={(e: KeyboardEvent) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								void handleCopyId(e, account.id);
+							}
+						}}
+						role="button"
+						tabindex="0"
+						title={$_(
+							copiedId === account.id ? 'tooltip_discord_copied' : 'tooltip_discord_copy_id'
+						)}
+					>
+						{#if copiedId === account.id}
+							<Check size={12} />
+						{:else}
+							<Copy size={12} />
+						{/if}
+					</span>
+					{#if quarryServers[account.id]}
+						<span class="discord-quarry-flag" title={$_('tooltip_discord_quarry_flag_title')}>
+							<ShieldAlert size={12} />
+						</span>
+					{/if}
 					{#each sourceInfo as source (source.code)}
 						<ExtLink
 							class="discord-source-link"
@@ -341,6 +415,17 @@
 				</button>
 
 				<div class="discord-account-content" hidden={!isExpanded}>
+					{#each quarryServers[account.id] ?? [] as quarryServer (quarryServer)}
+						<div class="discord-server-item">
+							<div class="discord-server-info">
+								<span class="discord-quarry-flag"><ShieldAlert size={12} /></span>
+								<span class="discord-server-name"><CanvasText text={quarryServer} /></span>
+							</div>
+							<div class="discord-server-date">
+								<span><CanvasText text={$_('tooltip_discord_quarry_source')} /></span>
+							</div>
+						</div>
+					{/each}
 					{#each account.servers as server (server.serverId)}
 						<div class="discord-server-item">
 							<div class="discord-server-info">
