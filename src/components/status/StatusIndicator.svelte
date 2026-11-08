@@ -320,7 +320,7 @@
 		/>
 	</span>
 
-	<span class="badge-container">
+	<span class="rotector-badge-container">
 		{#if !isGroup && statusConfig.isReportable}
 			<span class="reportable-badge {badgeStackClasses['reportable']}">
 				<Flag size={10} strokeWidth={2.5} />

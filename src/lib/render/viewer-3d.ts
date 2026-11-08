@@ -2,6 +2,7 @@ import { ROBLOX_API } from '../types/constants';
 import { logger } from '../utils/logging/logger';
 import { DedupeCache } from '../utils/caching/dedupe-cache';
 import { parseRoblox3DApiResponse, parseRoblox3DMetadataRaw } from '../schemas/roblox-api';
+import { isHostOrSubdomain, sanitizeRemoteUrl } from '../utils/dom/sanitizer';
 
 const RETRY_DELAY_MS = 2000;
 const MAX_RETRIES = 5;
@@ -49,7 +50,21 @@ export interface Roblox3DMetadata {
 const metadataCache = new DedupeCache<string, Roblox3DMetadata>(() => Infinity);
 
 export function resolveCdnUrl(hash: string): string {
-	return `https://t${String(calculateCdnSubdomain(hash))}.rbxcdn.com/${hash}`;
+	// Hashes come from a remote metadata response. Percent-encode so a crafted
+	// value cannot add path segments or a query to the CDN URL.
+	return `https://t${String(calculateCdnSubdomain(hash))}.rbxcdn.com/${encodeURIComponent(hash)}`;
+}
+
+function trustedRobloxHost(url: string | null): string {
+	if (!url) return '';
+	try {
+		const host = new URL(url).hostname;
+		return isHostOrSubdomain(host, 'rbxcdn.com') || isHostOrSubdomain(host, 'roblox.com')
+			? host
+			: '';
+	} catch {
+		return '';
+	}
 }
 
 export async function getOutfit3DData(outfitId: number): Promise<Roblox3DMetadata> {
@@ -82,7 +97,14 @@ async function fetchAndParse3DData(apiUrl: string): Promise<Roblox3DMetadata> {
 		lastState = apiResponse.state;
 
 		if (apiResponse.state === 'Completed' && apiResponse.imageUrl) {
-			const metadataResponse = await fetch(apiResponse.imageUrl);
+			// The metadata URL is server-supplied; only follow it when it points at
+			// Roblox's own CDN over HTTPS.
+			const metadataUrl = sanitizeRemoteUrl(apiResponse.imageUrl);
+			if (!metadataUrl || !trustedRobloxHost(metadataUrl)) {
+				throw new Error('3D metadata URL is not a trusted Roblox host');
+			}
+
+			const metadataResponse = await fetch(metadataUrl);
 			if (!metadataResponse.ok) {
 				throw new Error(`Failed to fetch 3D metadata: ${String(metadataResponse.status)}`);
 			}

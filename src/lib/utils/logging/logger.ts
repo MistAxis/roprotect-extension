@@ -1,7 +1,7 @@
 import { SETTINGS_DEFAULTS } from '../../types/settings';
 import { LOG_LEVELS, LOG_SOURCES, type LogLevel } from '../../types/developer-logs';
 import { addLogEntry } from '../../stores/developer-logs';
-import { getLogSource, truncateForLog } from './log-source';
+import { getLogSource, redactUrlForLog, truncateForLog } from './log-source';
 import { getStorage, subscribeStorageKey } from '../storage';
 
 const MAX_DATA_LENGTH = 1000;
@@ -96,7 +96,8 @@ class Logger {
 
 	private writeToStore(level: LogLevel, message: string, data?: unknown[]): void {
 		const source = getLogSource();
-		const pageUrl = source === LOG_SOURCES.CONTENT ? globalThis.location.href : undefined;
+		const pageUrl =
+			source === LOG_SOURCES.CONTENT ? redactUrlForLog(globalThis.location.href) : undefined;
 
 		addLogEntry({
 			timestamp: Date.now(),

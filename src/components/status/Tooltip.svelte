@@ -43,14 +43,20 @@
 	import {
 		liveProviderVerdicts,
 		mapPascUserStatus,
-		pickLivePascReferral
+		pickLivePascReferral,
+		sanitizePascUserStatus
 	} from '@/lib/utils/status/pasc-record';
 	import {
 		ensurePascClearance,
 		pascCanEdit,
 		pascViewerLevel as pascClearanceLevel
 	} from '@/lib/stores/pasc-clearance';
-	import { PASC_FLAG_TO_NUMERIC, type PascDiscordAccount, type PascRecord } from '@/lib/data/pasc';
+	import {
+		PASC_FLAG_TO_NUMERIC,
+		pascCanSee,
+		type PascDiscordAccount,
+		type PascRecord
+	} from '@/lib/data/pasc';
 	import { getAssetUrl } from '@/lib/utils/assets';
 	import {
 		detectPageContext,
@@ -350,8 +356,12 @@
 		};
 	});
 
+	// Linked Discord is A2+ only. Build the view model only for viewers who can
+	// see it, so lower-clearance tabs never hold a Discord account list in state.
+	const pascCanSeeDiscord = $derived(pascCanSee($pascClearanceLevel, 'A2'));
+
 	const pascDiscordAccounts = $derived.by((): PascDiscordAccount[] => {
-		if (!taseV2Record) return [];
+		if (!taseV2Record || !pascCanSeeDiscord) return [];
 		return Object.entries(taseV2Record.detections).map(([discordId, account]) => {
 			const avatar = taseAvatars[discordId];
 			const fallback = avatar?.globalName || avatar?.username || discordId;
@@ -393,10 +403,26 @@
 	// lookup shape, so the tab updates instantly without waiting for a refetch.
 	// Cleared whenever the tooltip moves to another user.
 	let pascSavedStatus = $state<UserStatus | null>(null);
+	// Invalidates an in-flight refresh so a slow response cannot overwrite a
+	// newer save or leak onto the next user.
+	let pascRefreshToken = 0;
 
 	$effect(() => {
 		void userId;
+		pascRefreshToken += 1;
 		pascSavedStatus = null;
+		// TASE data is user-scoped too. Without this reset a reused tooltip can
+		// briefly render the previous user's Discord accounts (and keeps their
+		// avatar payloads in memory) until the next lookup resolves.
+		latestTaseV2LoadId += 1;
+		taseV2Record = null;
+		taseAvatars = {};
+		// Outfit snapshots are user-scoped too. A same-name outfit on the next
+		// user must not resolve to the previous user's cached screenshot.
+		latestSnapshotLoadId += 1;
+		outfitSnapshotMaps = null;
+		loadingOutfitSnapshots = false;
+		lightboxState = null;
 		// A tooltip instance can be reused across users; never carry an open
 		// editor (with its per-record draft state) to the next user.
 		pascEditing = false;
@@ -405,19 +431,26 @@
 	async function refreshPasc() {
 		const api = getEnabledCustomApis().find((entry) => entry.id === 'system-pasc');
 		if (!api) return;
+		const token = ++pascRefreshToken;
 		try {
 			const status = await apiClient.checkUser(sanitizedUserId, { apiConfig: api });
-			pascSavedStatus = status;
-			onStatusUpdate?.(status);
+			if (token !== pascRefreshToken) return;
+			// Re-apply the client-side redaction: the lookup path sanitized the
+			// initial result, but this direct refresh bypasses it.
+			const safeStatus = sanitizePascUserStatus(status, get(pascClearanceLevel));
+			pascSavedStatus = safeStatus;
+			onStatusUpdate?.(safeStatus);
 		} catch (error) {
+			if (token !== pascRefreshToken) return;
 			logger.warn('[PASC] Refresh after write failed:', error);
 		}
 	}
 
 	function handlePascSaved(status: UserStatus) {
-		pascSavedStatus = status;
+		const safeStatus = sanitizePascUserStatus(status, get(pascClearanceLevel));
+		pascSavedStatus = safeStatus;
 		pascEditing = false;
-		onStatusUpdate?.(status);
+		onStatusUpdate?.(safeStatus);
 	}
 
 	$effect(() => {
@@ -581,6 +614,13 @@
 				return { full: $_('tooltip_header_past_offender', { values: { 0: entityType } }) };
 			}
 			case STATUS.FLAGS.SAFE: {
+				// Only a staff-reviewed SAFE record gets the affirmative "not flagged by
+				// our sources" message. Unreviewed accounts stay "not been reviewed yet".
+				if (currentStatus?.reviewer) {
+					return {
+						full: $_('tooltip_header_safe_reviewed', { values: { 0: entityType } })
+					};
+				}
 				return { full: $_('tooltip_header_safe', { values: { 0: entityType } }) };
 			}
 			case STATUS.FLAGS.UNKNOWN: {
@@ -618,6 +658,9 @@
 		if (!activeStatus) return $_('tooltip_status_unknown');
 		if (activeStatus.flagType === STATUS.FLAGS.QUEUED && activeUserStatus?.processed === true)
 			return $_('tooltip_status_not_flagged');
+		if (activeStatus.flagType === STATUS.FLAGS.SAFE && activeUserStatus?.reviewer) {
+			return $_('tooltip_status_safe');
+		}
 		return $_(STATUS_FLAG_PRESENTATION[activeStatus.flagType].textKey);
 	});
 
@@ -660,7 +703,11 @@
 	const shouldAutoTranslate = $derived.by(() => {
 		const translateEnabled = $settings[SETTINGS_KEYS.TRANSLATE_VIOLATIONS_ENABLED];
 		const hasReasons = reasonEntries.length > 0;
-		return translateEnabled && hasReasons;
+		// PASC reasons carry moderator-only case notes that the PASC tab renders
+		// itself. Auto-translating them would upload internal review text to the
+		// translation service for no visible benefit, so never send them.
+		const isPascTab = activeTab === 'system-pasc';
+		return translateEnabled && hasReasons && !isPascTab;
 	});
 
 	function getResizeConfig() {
@@ -1250,6 +1297,10 @@
 		if (!taseData || !('detections' in taseData) || !taseData.detections) return;
 
 		const loadId = ++latestTaseV2LoadId;
+		// The PASC tab reuses the TASE account cards, but only for A2+ viewers.
+		// Below that the block is hidden, so do not download avatar payloads the
+		// viewer can never see.
+		const needsAvatars = activeTab === 'system-tase' || pascCanSeeDiscord;
 		async function fetchTaseV2Data() {
 			try {
 				const taseRecord = taseData as unknown as TaseUserRecord;
@@ -1257,7 +1308,7 @@
 				taseV2Record = taseRecord;
 
 				const discordIds = Object.keys(taseRecord.detections);
-				if (discordIds.length === 0) {
+				if (!needsAvatars || discordIds.length === 0) {
 					if (loadId === latestTaseV2LoadId) {
 						taseAvatars = {};
 					}
@@ -1528,14 +1579,16 @@
 			{extractErrorMessage(activeError)}
 		</div>
 	{:else if activeTab === 'system-pasc'}
-		{#if pascResult?.loading}
+		{#if pascResult?.loading && !pascSavedStatus}
 			<div class="flex items-center justify-center gap-2 py-2">
 				<LoadingSpinner size="small" />
 				<span class="text-xs">{$_('tooltip_loading_user_info')}</span>
 			</div>
 		{:else if pascDisplayRecord}
 			<PascDisplay
-				canEdit={$pascCanEdit && pascDisplayRecord.accessLevel !== null}
+				canEdit={$pascCanEdit &&
+					pascDisplayRecord.accessLevel !== null &&
+					pascCanSee($pascClearanceLevel, pascDisplayRecord.accessLevel)}
 				discordAccounts={pascDiscordAccounts}
 				onEdit={() => (pascEditing = true)}
 				onRefresh={refreshPasc}
@@ -1544,7 +1597,7 @@
 				userId={sanitizedUserId}
 				viewerLevel={$pascClearanceLevel}
 			/>
-			{#if pascEditing && pascDisplayRecord.accessLevel !== null}
+			{#if pascEditing && pascDisplayRecord.accessLevel !== null && pascCanSee($pascClearanceLevel, pascDisplayRecord.accessLevel)}
 				<div
 					class="modal-overlay visible"
 					onclick={(event) => event.stopPropagation()}
@@ -2163,12 +2216,14 @@
 											<CanvasText
 												text={userInfo.username
 													? `@${userInfo.username}`
-													: userInfo.displayName || 'Unknown User'}
+													: userInfo.displayName || $_('tooltip_unknown_user')}
 											/>
 										{:else}
 											<CanvasText
 												text={userInfo.displayName ||
-													(userInfo.username ? `@${userInfo.username}` : 'Unknown User')}
+													(userInfo.username
+														? `@${userInfo.username}`
+														: $_('tooltip_unknown_user'))}
 											/>
 											{#if userInfo.username && userInfo.displayName && userInfo.username !== userInfo.displayName}
 												<span class="tooltip-user-handle">

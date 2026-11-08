@@ -3,7 +3,7 @@ import * as v from 'valibot';
 // /oauth/pair answers { success: true, data: { pair, authorizeUrl } }
 export const DiscordSignInStartSchema = v.object({
 	pair: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
-	authorizeUrl: v.pipe(v.string(), v.minLength(1))
+	authorizeUrl: v.pipe(v.string(), v.minLength(1), v.maxLength(2048))
 });
 
 // /oauth/poll always answers HTTP 200 with one of three states. `ready` consumes
@@ -20,14 +20,14 @@ const ReadyPollSchema = v.object({
 	status: v.literal('ready'),
 	// Null when the account only has an admin-scoped key (raw keys never travel
 	// through the portal) or when the account is banned.
-	key: v.nullable(v.string()),
-	fingerprint: v.string(),
-	label: v.optional(v.nullable(v.string()), null),
-	services: v.optional(v.array(v.string()), []),
-	discordId: v.string(),
-	username: v.string(),
-	displayName: v.optional(v.nullable(v.string()), null),
-	avatarUrl: v.optional(v.nullable(v.string()), null)
+	key: v.nullable(v.pipe(v.string(), v.maxLength(512))),
+	fingerprint: v.pipe(v.string(), v.maxLength(128)),
+	label: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(64))), null),
+	services: v.optional(v.pipe(v.array(v.pipe(v.string(), v.maxLength(32))), v.maxLength(20)), []),
+	discordId: v.pipe(v.string(), v.maxLength(32)),
+	username: v.pipe(v.string(), v.maxLength(128)),
+	displayName: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(128))), null),
+	avatarUrl: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(2048))), null)
 });
 
 export const DiscordSignInPollSchema = v.variant('status', [

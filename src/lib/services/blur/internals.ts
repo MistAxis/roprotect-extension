@@ -32,9 +32,22 @@ export const PROFILE_TEXT_BLUR_CLASS_FLAGGED = 'rotector-profile-text-flagged';
 export const PROFILE_TEXT_BLUR_CLASS_SAFE = 'rotector-profile-text-safe';
 
 // Session-based sets for tracking manually revealed elements where both tile and
-// profile blur read these to skip already-revealed targets
+// profile blur read these to skip already-revealed targets. Bounded so a long
+// session spent clicking names cannot grow them without limit; the oldest
+// reveal is forgotten first and would simply blur again if it reappears.
+const MAX_REVEALED_IDS = 2000;
 export const revealedUsers = new Set<string>();
 export const revealedGroups = new Set<string>();
+
+function rememberReveal(store: Set<string>, id: string): void {
+	store.delete(id);
+	store.add(id);
+	while (store.size > MAX_REVEALED_IDS) {
+		const oldest = store.keys().next().value;
+		if (oldest === undefined) break;
+		store.delete(oldest);
+	}
+}
 
 export function getBlurSettings(): BlurSettings {
 	const s = get(settings);
@@ -82,14 +95,14 @@ export function revealSingleElement(el: Element): void {
 }
 
 function revealUser(userId: string): void {
-	revealedUsers.add(userId);
+	rememberReveal(revealedUsers, userId);
 	document
 		.querySelectorAll(`[${CSS.escape(BLUR_SELECTORS.BLUR_USER_ID)}="${CSS.escape(userId)}"]`)
 		.forEach(revealSingleElement);
 }
 
 function revealGroup(groupId: string): void {
-	revealedGroups.add(groupId);
+	rememberReveal(revealedGroups, groupId);
 	document
 		.querySelectorAll(`[${CSS.escape(BLUR_SELECTORS.BLUR_GROUP)}="${CSS.escape(groupId)}"]`)
 		.forEach(revealSingleElement);

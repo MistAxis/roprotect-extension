@@ -68,7 +68,9 @@ export interface UserInfo {
 
 export interface GroupInfo {
 	groupId: string;
-	groupName: string;
+	// Undefined when the DOM could not be read, so the caller can fall back to a
+	// localized placeholder instead of an English sentinel.
+	groupName?: string | undefined;
 	groupImageUrl?: string | undefined;
 }
 
@@ -102,9 +104,10 @@ const AVATAR_SELECTORS: Record<string, string> = {
 
 // Normalizes a pathname by stripping the language prefix if present
 export function normalizePathname(pathname: string): string {
-	// Match language prefixes like /es/, /de/, /pt-br/ at the start
-	// Pattern: slash + 2-5 lowercase letters/hyphens + slash
-	return pathname.replace(/^\/[a-z]{2}(?:-[a-z]{2})?\//, '/');
+	// Roblox locale prefixes are two letters (/es/, /de/), optionally with a region
+	// (/pt-br/, /zh-cn/), plus the three-letter Filipino prefix (/fil/). Missing
+	// `fil` left every /fil/ page unmatched by the anchored PAGE_PATTERNS.
+	return pathname.replace(/^\/(?:[a-z]{2}(?:-[a-z]{2})?|fil)\//, '/');
 }
 
 // Walks up from the anchor to classify the surrounding card or page, falling back to URL match
@@ -163,16 +166,12 @@ export function extractUserInfo(
 	container: Element | null
 ): UserInfo {
 	if (!container) {
-		return { userId, displayName: 'Unknown User' };
+		return { userId };
 	}
 
-	let displayName = extractText(container, DISPLAY_NAME_SELECTORS[pageType]);
+	const displayName = extractText(container, DISPLAY_NAME_SELECTORS[pageType]);
 	const username = extractUsername(container, pageType);
 	const avatarUrl = extractAvatarUrl(container, pageType);
-
-	if (!displayName && !username) {
-		displayName = 'Unknown User';
-	}
 
 	return { userId, username, displayName, avatarUrl };
 }

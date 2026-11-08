@@ -53,6 +53,7 @@ async function seedDefaultSettings(): Promise<void> {
 
 let pollIntervalId: ReturnType<typeof setInterval> | null = null;
 let isPolling = false;
+let pollingStarting = false;
 
 const activeCaptchaSessions = new Set<string>();
 
@@ -99,7 +100,10 @@ async function pollQueueStatus(): Promise<void> {
 		const response = await getQueueStatus(userIds);
 
 		for (const [userIdStr, status] of Object.entries(response)) {
-			if (!status.queued) continue;
+			// Apply both queued and terminal statuses: providers stop reporting
+			// `queued` once processing finishes, and skipping those left entries
+			// permanently unprocessed (polling forever, no completion notice).
+			if (!status.queued && !status.processed) continue;
 
 			const completedEntry = await applyQueueStatusUpdate(Number.parseInt(userIdStr, 10), status);
 
@@ -115,13 +119,21 @@ async function pollQueueStatus(): Promise<void> {
 }
 
 async function startPollingIfNeeded(): Promise<void> {
-	if (pollIntervalId) return;
-	const unprocessed = await readUnprocessedEntries();
-	if (unprocessed.length === 0) return;
+	// Guard the whole async body: two rapid storage events could otherwise both
+	// pass the check and create intervals, one of which would never be cleared.
+	if (pollIntervalId || pollingStarting) return;
+	pollingStarting = true;
 
-	logger.debug('Starting queue status polling');
-	void pollQueueStatus();
-	pollIntervalId = setInterval(() => void pollQueueStatus(), API_CONFIG.QUEUE_POLL_INTERVAL);
+	try {
+		const unprocessed = await readUnprocessedEntries();
+		if (unprocessed.length === 0) return;
+
+		logger.debug('Starting queue status polling');
+		pollIntervalId = setInterval(() => void pollQueueStatus(), API_CONFIG.QUEUE_POLL_INTERVAL);
+		void pollQueueStatus();
+	} finally {
+		pollingStarting = false;
+	}
 }
 
 function stopPolling(): void {
@@ -192,11 +204,34 @@ async function handleCaptchaStart(
 	logger.info('Captcha popup opened for session:', sessionId);
 }
 
+// The captcha popup lives on the API origin, so it is the only external sender
+// whose tab may be closed after the exchange. Firefox has no
+// `externally_connectable`, so the roscoe bridge forwards the same messages from
+// a roscoe.com tab — closing that one would destroy the user's page.
+function isApiOriginSender(sender: {
+	origin?: string | undefined;
+	url?: string | undefined;
+}): boolean {
+	const raw = sender.origin ?? sender.url;
+	if (!raw) return false;
+	try {
+		return new URL(raw).origin === new URL(`${API_CONFIG.BASE_URL}/`).origin;
+	} catch {
+		return false;
+	}
+}
+
+interface CaptchaSender {
+	origin?: string | undefined;
+	url?: string | undefined;
+	tab?: { id?: number | undefined } | undefined;
+}
+
 // Dedupes by sessionId, validates the session hasn't expired, closes the popup tab, and forwards the token to the originating content tab
 async function handleCaptchaSuccess(
 	sessionId: string,
 	token: string,
-	sender: { tab?: { id?: number | undefined } | undefined }
+	sender: CaptchaSender
 ): Promise<void> {
 	if (activeCaptchaSessions.has(sessionId)) {
 		return;
@@ -220,7 +255,7 @@ async function handleCaptchaSuccess(
 
 		await removeStorage('local', storageKey);
 
-		if (sender.tab?.id) {
+		if (sender.tab?.id && isApiOriginSender(sender)) {
 			await browser.tabs.remove(sender.tab.id).catch(() => {});
 		}
 
@@ -255,7 +290,7 @@ async function handleCaptchaSuccess(
 async function handleCaptchaError(
 	sessionId: string | undefined,
 	error: string | undefined,
-	sender: { tab?: { id?: number | undefined } | undefined }
+	sender: CaptchaSender
 ): Promise<void> {
 	let senderTabId: number | undefined;
 	if (sessionId) {
@@ -265,7 +300,7 @@ async function handleCaptchaError(
 		await removeStorage('local', storageKey);
 	}
 
-	if (sender.tab?.id) {
+	if (sender.tab?.id && isApiOriginSender(sender)) {
 		await browser.tabs.remove(sender.tab.id).catch(() => {});
 	}
 
@@ -314,10 +349,7 @@ export default defineBackground(() => {
 		logger.error('Failed to initialize queue polling:', error);
 	});
 
-	async function dispatchCaptchaMessage(
-		message: unknown,
-		sender: { tab?: { id?: number | undefined } | undefined }
-	): Promise<boolean> {
+	async function dispatchCaptchaMessage(message: unknown, sender: CaptchaSender): Promise<boolean> {
 		const parsed = safeParseCaptchaExternalMessage(message);
 		if (!parsed.success) return false;
 
@@ -374,6 +406,14 @@ export default defineBackground(() => {
 		) => {
 			void (async () => {
 				try {
+					// `externally_connectable` already limits who can reach this
+					// listener in Chrome, but checking the sender origin keeps a
+					// manifest regression or a Firefox shim from turning this into
+					// an open channel to the background.
+					if (!isApiOriginSender(sender)) {
+						logger.warn('Rejected external message from unexpected origin');
+						return;
+					}
 					await dispatchCaptchaMessage(message, sender);
 				} catch (error) {
 					logger.error('External message handling failed:', error);

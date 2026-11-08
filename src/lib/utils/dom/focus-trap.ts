@@ -13,13 +13,28 @@ const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 function focusableElements(node: HTMLElement): HTMLElement[] {
+	const root = node.getRootNode();
+	const active =
+		root instanceof Document || root instanceof ShadowRoot
+			? root.activeElement
+			: document.activeElement;
 	return [...node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
-		(element) => element.offsetParent !== null || element === document.activeElement
+		// offsetParent is null for position:fixed controls, so use box presence.
+		(element) => element.getClientRects().length > 0 || element === active
 	);
 }
 
 export function trapFocus(node: HTMLElement): { destroy: () => void } {
-	const previouslyFocused = document.activeElement;
+	// Dialogs are portaled into the content-script shadow root, where
+	// document.activeElement is the shadow host rather than the focused control.
+	function activeElement(): Element | null {
+		const root = node.getRootNode();
+		return root instanceof ShadowRoot || root instanceof Document
+			? (root.activeElement ?? document.activeElement)
+			: document.activeElement;
+	}
+
+	const previouslyFocused = activeElement();
 
 	const focusFirst = (): void => {
 		const first = focusableElements(node)[0];
@@ -43,10 +58,11 @@ export function trapFocus(node: HTMLElement): { destroy: () => void } {
 		const last = focusable.at(-1);
 		if (!first || !last) return;
 
-		if (event.shiftKey && document.activeElement === first) {
+		const active = activeElement();
+		if (event.shiftKey && active === first) {
 			event.preventDefault();
 			last.focus();
-		} else if (!event.shiftKey && document.activeElement === last) {
+		} else if (!event.shiftKey && active === last) {
 			event.preventDefault();
 			first.focus();
 		}

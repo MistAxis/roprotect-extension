@@ -1,7 +1,7 @@
 import type { LongTaskEntry, MemorySnapshot, MetricsSnapshot } from '../../types/performance';
 import { addMetricsSnapshot } from '../../stores/metrics';
 import { getObserverCount } from '../dom/observer';
-import { getLogSource, IS_DEV } from './log-source';
+import { getLogSource, IS_DEV, redactUrlForLog } from './log-source';
 import { generateLocalId } from '../id';
 
 const SAMPLE_INTERVAL = 30_000; // 30 seconds
@@ -72,7 +72,7 @@ class MetricsCollector {
 		return {
 			id: generateLocalId(),
 			timestamp: Date.now(),
-			pageUrl: globalThis.location.href,
+			pageUrl: redactUrlForLog(globalThis.location.href),
 			source: getLogSource(),
 			type,
 			observerCount: getObserverCount(),
@@ -100,7 +100,7 @@ class MetricsCollector {
 		const snapshot: MetricsSnapshot = {
 			id: generateLocalId(),
 			timestamp: Date.now(),
-			pageUrl: globalThis.location.href,
+			pageUrl: redactUrlForLog(globalThis.location.href),
 			source: getLogSource(),
 			type: 'longtask',
 			observerCount: getObserverCount(),

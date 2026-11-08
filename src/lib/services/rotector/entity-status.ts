@@ -274,6 +274,17 @@ class EntityStatusService<T extends EntityStatus> {
 		this.cache.delete(entityId);
 	}
 
+	// Drops every cached verdict and aborts in-flight lookups. Used when the
+	// viewer's API key changes: cached provider data belongs to the previous
+	// key and may carry clearance-gated fields the new viewer cannot see.
+	public clearCache(): void {
+		this.cache.clear();
+		for (const entry of this.pendingRequests.values()) {
+			entry.controller.abort();
+		}
+		this.pendingRequests.clear();
+	}
+
 	// Snapshots and resolves the queued waiters from one shared fetch so late aborts don't reject siblings
 	private async runFetch(entityId: string, entry: PendingEntry<T>): Promise<void> {
 		try {

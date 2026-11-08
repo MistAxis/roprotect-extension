@@ -115,9 +115,14 @@
 }
 
 @utility discord-account-header {
-	@apply flex cursor-pointer items-center gap-2 border-none bg-transparent p-2 text-start inline-full;
+	@apply flex items-center gap-2 p-2 text-start inline-full;
 	color: var(--color-text);
 	user-select: none;
+}
+
+@utility discord-account-toggle {
+	@apply flex min-w-0 cursor-pointer items-center gap-2 border-none bg-transparent p-0 text-start text-inherit;
+	font: inherit;
 	transition: color 0.15s ease;
 
 	&:hover {
@@ -129,10 +134,6 @@
 
 		.discord-account-id {
 			color: var(--color-text-heading);
-		}
-
-		.discord-server-count {
-			color: var(--color-text);
 		}
 	}
 

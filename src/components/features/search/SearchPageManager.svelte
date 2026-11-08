@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
+	import { showError } from '@/lib/stores/toast';
 	import { logger } from '@/lib/utils/logging/logger';
 	import { waitForElement } from '@/lib/utils/dom/element-waiter';
 	import { PAGE_TYPES, STATUS_SELECTORS, USER_ACTIONS } from '@/lib/types/constants';
@@ -7,6 +9,7 @@
 		consumeSkipWarning,
 		proceedFriendClick
 	} from '@/lib/services/friends/friend-button-intercept';
+	import { blockUser } from '@/lib/services/roblox/actions';
 	import UserListManager from '../lists/UserListManager.svelte';
 	import FriendWarning from '../friends/FriendWarning.svelte';
 
@@ -90,12 +93,19 @@
 		friendWarningUserId = null;
 	}
 
-	function handleFriendBlock() {
-		if (friendWarningUserId) {
-			logger.userAction(USER_ACTIONS.FRIEND_BLOCK, { userId: friendWarningUserId });
-			window.open(`https://www.roblox.com/users/${friendWarningUserId}/profile`, '_blank');
+	async function handleFriendBlock() {
+		const userId = friendWarningUserId;
+		if (!userId) return;
+
+		logger.userAction(USER_ACTIONS.FRIEND_BLOCK, { userId });
+		try {
+			await blockUser(userId);
+			friendWarningUserId = null;
+			globalThis.location.reload();
+		} catch (error) {
+			logger.error('Failed to block user:', error);
+			showError($_('friend_warning_block_failed'));
 		}
-		friendWarningUserId = null;
 	}
 
 	function cleanup() {

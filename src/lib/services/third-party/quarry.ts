@@ -1,4 +1,6 @@
-import { getCacheTtlMs } from '../../stores/settings';
+import { get } from 'svelte/store';
+import { getCacheTtlMs, settings } from '../../stores/settings';
+import { SETTINGS_KEYS } from '../../types/settings';
 import { DedupeCache } from '../../utils/caching/dedupe-cache';
 import { apiClient } from '../rotector/api-client';
 
@@ -11,5 +13,16 @@ export async function getQuarryServers(
 ): Promise<Record<string, string[] | null>> {
 	const ids = [...new Set(discordIds)].toSorted();
 	if (ids.length === 0) return {};
+	// Skip the background round-trip (and its storage reads) when Quarry is not
+	// configured: every tooltip would otherwise ask for a lookup that can only
+	// return an empty map.
+	const current = get(settings);
+	if (!current[SETTINGS_KEYS.QUARRY_URL].trim() || !current[SETTINGS_KEYS.QUARRY_KEY].trim()) {
+		return {};
+	}
 	return cache.get(ids.join(','), () => apiClient.lookupQuarry(ids));
+}
+
+export function clearQuarryCache(): void {
+	cache.clear();
 }

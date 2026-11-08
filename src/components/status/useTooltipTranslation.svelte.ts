@@ -30,6 +30,8 @@ export function useTooltipTranslation(opts: Options): TooltipTranslation {
 	let translationError = $state<string | null>(null);
 	let showTranslated = $state(true);
 	let translationAttempted = $state(false);
+	// Invalidates an in-flight run when the tab/user changes mid-request.
+	let runId = 0;
 
 	const hasActualTranslations = $derived.by(() => {
 		const entries = Object.entries(translationsMap);
@@ -39,9 +41,11 @@ export function useTooltipTranslation(opts: Options): TooltipTranslation {
 
 	$effect(() => {
 		void opts.resetKey();
+		runId += 1;
 		translationsMap = {};
 		translationError = null;
 		translationAttempted = false;
+		isTranslating = false;
 		showTranslated = true;
 	});
 
@@ -53,6 +57,8 @@ export function useTooltipTranslation(opts: Options): TooltipTranslation {
 
 	async function performAutoTranslation() {
 		if (isTranslating || Object.keys(translationsMap).length > 0) return;
+
+		const requestRun = runId;
 
 		try {
 			isTranslating = true;
@@ -86,6 +92,7 @@ export function useTooltipTranslation(opts: Options): TooltipTranslation {
 				if (textsForReason.length > 0) {
 					try {
 						const result = await apiClient.translateTexts(textsForReason, targetLanguage, 'auto');
+						if (requestRun !== runId) return;
 						Object.assign(allTranslations, result.translations);
 						totalTextsCount += textsForReason.length;
 					} catch (error) {
@@ -94,6 +101,7 @@ export function useTooltipTranslation(opts: Options): TooltipTranslation {
 				}
 			}
 
+			if (requestRun !== runId) return;
 			translationsMap = allTranslations;
 
 			if (totalTextsCount > 0) {
@@ -103,11 +111,14 @@ export function useTooltipTranslation(opts: Options): TooltipTranslation {
 				});
 			}
 		} catch (error) {
+			if (requestRun !== runId) return;
 			logger.error('Auto-translation failed:', error);
 			translationError = extractErrorMessage(error);
 		} finally {
-			isTranslating = false;
-			translationAttempted = true;
+			if (requestRun === runId) {
+				isTranslating = false;
+				translationAttempted = true;
+			}
 		}
 	}
 

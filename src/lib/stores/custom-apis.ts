@@ -11,9 +11,9 @@ import {
 } from '../utils/permissions';
 import { asApiError } from '../utils/api/api-error';
 import { testCustomApiConnection } from '../services/custom-api-test';
-import { getAllStorage, getStorage, setStorage } from '../utils/storage';
+import { getAllStorage, getStorage, setStorage, subscribeStorageKey } from '../utils/storage';
 import { generateLocalId } from '../utils/id';
-import { parsePersistedCustomApis } from '../schemas/custom-api';
+import { PersistedCustomApiSchema } from '../schemas/custom-api';
 import { apiClient } from '../services/rotector/api-client';
 import { getAssetUrl } from '../utils/assets';
 
@@ -51,8 +51,64 @@ function generateCustomApiId(): string {
 	return generateLocalId('custom-api');
 }
 
+// Validates entries individually so one corrupt record cannot wipe the user's
+// entire provider list (a whole-array parse used to reset everything to []).
+function recoverUserApis(stored: unknown): CustomApiConfig[] {
+	if (!Array.isArray(stored)) return [];
+	return stored.filter(
+		(entry): entry is CustomApiConfig =>
+			v.is(PersistedCustomApiSchema, entry) && !entry.isSystem && !entry.id.startsWith('system-')
+	);
+}
+
+// Open tabs must pick up provider add/edit/delete/enable without a reload,
+// otherwise a deleted provider keeps receiving lookups until every tab reloads.
+let storageWired = false;
+function wireCustomApiStorage(): void {
+	if (storageWired) return;
+	storageWired = true;
+
+	subscribeStorageKey<unknown>('local', SETTINGS_KEYS.CUSTOM_APIS, (next) => {
+		if (next === undefined) return;
+		const userApis = recoverUserApis(next);
+		const systemApis = get(customApis).filter((api) => api.isSystem);
+		customApis.set([...systemApis, ...userApis]);
+	});
+}
+
+// Serializes concurrent loads (page init, key change, Discord sign-in) so a
+// stale whoami result cannot overwrite a newer one.
+let loadInFlight: Promise<void> | null = null;
+let reloadQueued = false;
+
+export function loadCustomApis(): Promise<void> {
+	if (loadInFlight) {
+		reloadQueued = true;
+		return loadInFlight;
+	}
+
+	loadInFlight = (async () => {
+		for (;;) {
+			reloadQueued = false;
+			await performLoadCustomApis();
+			// Read through a call: TS narrows the module flag and treats this as dead.
+			if (!shouldReloadCustomApis()) break;
+		}
+	})().finally(() => {
+		loadInFlight = null;
+	});
+
+	return loadInFlight;
+}
+
+// Reads the module-level flag without letting TypeScript narrow it to `false`.
+function shouldReloadCustomApis(): boolean {
+	return reloadQueued;
+}
+
 // Loads APIs from storage, and if API key is present, loads services from whoami
-export async function loadCustomApis(): Promise<void> {
+async function performLoadCustomApis(): Promise<void> {
+	wireCustomApiStorage();
 	const stored = await getStorage<unknown>('local', SETTINGS_KEYS.CUSTOM_APIS, undefined);
 	const allSync = await getAllStorage('sync');
 	const settings = allSync;
@@ -70,25 +126,28 @@ export async function loadCustomApis(): Promise<void> {
 		await setStorage('local', SETTINGS_KEYS.CUSTOM_APIS, []);
 	}
 
-	// On corruption, recover with an empty list rather than throwing
 	let userApis: CustomApiConfig[] = [];
 	if (stored !== undefined) {
-		try {
-			userApis = parsePersistedCustomApis(stored);
-			// Filter out old system APIs (they'll be recreated fresh from whoami)
-			userApis = userApis.filter((api) => !api.isSystem && !api.id.startsWith('system-'));
-		} catch (error) {
-			logger.warn('Stored custom APIs failed validation; resetting to empty list:', {
-				issues: v.isValiError(error) ? v.summarize(error.issues) : String(error)
+		userApis = recoverUserApis(stored);
+		const invalidCount = Array.isArray(stored)
+			? stored.filter((entry) => !v.is(PersistedCustomApiSchema, entry)).length
+			: 1;
+		if (invalidCount > 0) {
+			// Keep whatever still validates and preserve the raw value for recovery
+			// instead of destroying every configured provider.
+			logger.warn('Some stored custom APIs failed validation; kept the valid entries', {
+				invalid: invalidCount,
+				valid: userApis.length
 			});
-			await setStorage('local', SETTINGS_KEYS.CUSTOM_APIS, []);
-			userApis = [];
+			await setStorage('local', `${SETTINGS_KEYS.CUSTOM_APIS}_corrupt_backup`, stored);
 		}
 	}
 
+	// Preserve the previously loaded system providers when whoami fails, but only
+	// when they were built from the same key (a different key invalidates them).
 	let systemApis: CustomApiConfig[] = [];
-
 	if (apiKey) {
+		systemApis = get(customApis).filter((api) => api.isSystem && api.apiKey === apiKey);
 		try {
 			// Fetch services from whoami
 			const response = await apiClient.whoami(apiKey);
@@ -102,6 +161,8 @@ export async function loadCustomApis(): Promise<void> {
 			});
 			if (response.success && whoamiData) {
 				systemApis = createSystemApisFromWhoami(whoamiData, apiKey);
+			} else if (systemApis.length === 0) {
+				logger.warn('[loadCustomApis] whoami did not return provider data; lookups unavailable');
 			}
 		} catch (error) {
 			logger.error('Failed to load services from whoami:', error);
@@ -134,10 +195,23 @@ function createSystemApisFromWhoami(whoami: WhoamiData, apiKey: string): CustomA
 	// would stop customApiCheckUser from substituting the real ID.
 	const resolveEndpoint = (value: string | undefined, fallbackPath: string): string => {
 		const raw = (value ?? fallbackPath).trim();
-		if (/^https?:\/\//i.test(raw)) {
-			return raw;
-		}
 		const { origin } = new URL(`${API_CONFIG.BASE_URL}/`);
+		if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+			// whoami is remote data. An absolute URL here decides where the
+			// extension sends the user's API key, so only accept HTTPS on the
+			// same origin that served whoami. Anything else falls back to the
+			// known-good path instead of silently exfiltrating credentials.
+			try {
+				const candidate = new URL(raw);
+				if (candidate.protocol === 'https:' && candidate.origin === origin) {
+					return raw;
+				}
+			} catch {
+				// fall through to the safe fallback
+			}
+			logger.warn('Ignoring whoami endpoint outside the API origin:', { endpoint: raw });
+			return `${origin}${fallbackPath.startsWith('/') ? '' : '/'}${fallbackPath}`;
+		}
 		return `${origin}${raw.startsWith('/') ? '' : '/'}${raw}`;
 	};
 
@@ -304,7 +378,15 @@ export async function setCustomApiEnabled(
 		return { ok: false, reason: 'invalid_url' };
 	}
 
+	// Request host permission first: without it the test fetch is CORS-blocked
+	// and would report a bogus connection failure the user cannot act on.
 	try {
+		const hasPerms = await hasPermissionsForOrigins(origins);
+		const granted = hasPerms || (await requestPermissionsForOrigins(origins));
+		if (!granted) {
+			return { ok: false, reason: 'permission_denied' };
+		}
+
 		// Turning on an untested API runs a connection test first and only enables it on success
 		if (api.lastTestSuccess !== true) {
 			const success = await testCustomApiConnection(api);
@@ -312,12 +394,6 @@ export async function setCustomApiEnabled(
 			if (!success) {
 				return { ok: false, reason: 'test_failed' };
 			}
-		}
-
-		const hasPerms = await hasPermissionsForOrigins(origins);
-		const granted = hasPerms || (await requestPermissionsForOrigins(origins));
-		if (!granted) {
-			return { ok: false, reason: 'permission_denied' };
 		}
 
 		await updateCustomApi(api.id, { enabled: true });

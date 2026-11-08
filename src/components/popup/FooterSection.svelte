@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import { ExternalLink, FileText } from '@lucide/svelte';
+	import { FileText } from '@lucide/svelte';
 	import SiDiscord from '@icons-pack/svelte-simple-icons/icons/SiDiscord';
 	import SiGithub from '@icons-pack/svelte-simple-icons/icons/SiGithub';
 	import ExtLink from '@/components/ui/ExtLink.svelte';
@@ -8,26 +8,29 @@
 
 <div class="footer-container">
 	<div class="footer-link-row">
-		<ExtLink class="footer-link" href="https://discord.gg/ZwJbrWHPVz">
-			<SiDiscord class="footer-link-icon" size={14} />
-			{$_('footer_discord')}
+		<ExtLink
+			class="footer-link"
+			aria-label={$_('footer_discord')}
+			href="https://discord.gg/ZwJbrWHPVz"
+		>
+			<SiDiscord class="footer-link-icon" size={17} />
+			<span class="footer-link-tooltip">{$_('footer_discord')}</span>
 		</ExtLink>
-		<span class="footer-link-dot">&middot;</span>
-		<ExtLink class="footer-link" href="https://github.com/ItsTato">
-			<SiGithub class="footer-link-icon" size={14} />
-			{$_('footer_github')}
+		<ExtLink
+			class="footer-link"
+			aria-label={$_('footer_github')}
+			href="https://github.com/ItsTato/roprotect-extension"
+		>
+			<SiGithub class="footer-link-icon" size={17} />
+			<span class="footer-link-tooltip">{$_('footer_github')}</span>
 		</ExtLink>
-		<span class="footer-link-dot">&middot;</span>
-		<ExtLink class="footer-link" href="https://github.com/ItsTato/roprotect-extension">
-			<ExternalLink class="footer-link-icon" />
-			{$_('footer_source_code')}
-		</ExtLink>
-		<span class="footer-link-dot">&middot;</span>
-		<ExtLink class="footer-link" href="https://roprotect.tlet.xyz/docs">
-			<FileText class="footer-link-icon" />
-			{$_('footer_docs')}
+		<ExtLink
+			class="footer-link"
+			aria-label={$_('footer_docs')}
+			href="https://roprotect.tlet.xyz/docs"
+		>
+			<FileText class="footer-link-icon" size={17} />
+			<span class="footer-link-tooltip">{$_('footer_docs')}</span>
 		</ExtLink>
 	</div>
-
-	<p class="footer-credit">{$_('footer_maintained_by')}</p>
 </div>

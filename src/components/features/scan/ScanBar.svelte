@@ -4,88 +4,23 @@
 	import { cubicOut } from 'svelte/easing';
 	import { _ } from 'svelte-i18n';
 	import { createAbortableBatch } from '@/lib/utils/api/abortable-batch';
-	import { getAssetUrl } from '@/lib/utils/assets';
 	import { logger } from '@/lib/utils/logging/logger';
 	import StatusIcon from '@/components/icons/StatusIcon.svelte';
-	import type { StatusIconName } from '@/lib/utils/icon-mapping';
 	import type {
 		ScanCategory,
 		ScanCounts,
 		ScanProgressCallback,
 		ScanProgressDetail
 	} from '@/lib/services/rotector/scan-jobs';
+	import {
+		SCAN_CATEGORY_PRESENTATION,
+		SCAN_SEVERITY_ORDER
+	} from '@/lib/utils/status/scan-category';
 
 	interface Props {
 		scan: (onProgress: ScanProgressCallback, signal: AbortSignal) => Promise<ScanCounts>;
 		label: string;
 	}
-
-	interface CategoryConfig {
-		labelKey: string;
-		icon: StatusIconName;
-		color: string;
-	}
-
-	const CATEGORIES: Record<ScanCategory, CategoryConfig> = {
-		unsafe: {
-			labelKey: 'tooltip_status_unsafe',
-			icon: 'unsafe',
-			color: 'var(--color-status-unsafe)'
-		},
-		redacted: {
-			labelKey: 'tooltip_status_redacted',
-			icon: 'redacted',
-			color: 'var(--color-status-unsafe)'
-		},
-		mixed: { labelKey: 'tooltip_status_mixed', icon: 'mixed', color: 'var(--color-status-mixed)' },
-		pending: {
-			labelKey: 'tooltip_status_under_review',
-			icon: 'pending',
-			color: 'var(--color-status-pending)'
-		},
-		past: {
-			labelKey: 'tooltip_status_past_offender',
-			icon: 'past-offender',
-			color: 'var(--color-status-past-offender)'
-		},
-		provisional: {
-			labelKey: 'tooltip_status_provisional',
-			icon: 'provisional',
-			color: 'var(--color-status-safe)'
-		},
-		queued: {
-			labelKey: 'tooltip_status_checking',
-			icon: 'checking',
-			color: 'var(--color-status-queued)'
-		},
-		outfit: {
-			labelKey: 'tooltip_status_outfit_detected',
-			icon: 'outfit',
-			color: 'var(--color-status-outfit)'
-		},
-		integration: {
-			labelKey: 'tooltip_status_integration',
-			icon: 'integration',
-			color: 'var(--color-status-integration)'
-		},
-		unknown: {
-			labelKey: 'tooltip_status_update_required',
-			icon: 'unknown',
-			color: 'var(--color-status-pending)'
-		},
-		safe: {
-			labelKey: 'tooltip_status_not_checked',
-			icon: 'safe',
-			color: 'var(--color-status-safe)'
-		}
-	};
-
-	const CATEGORY_ORDER = Object.keys(CATEGORIES) as ScanCategory[];
-
-	// 'integration' overlaps the severity buckets (a friend can be both Unsafe and an
-	// integration detection), so it is reported on its own chip and kept out of the totals that
-	// drive the bar segments
-	const SEVERITY_ORDER = CATEGORY_ORDER.filter((key) => key !== 'integration');
 
 	let { scan, label }: Props = $props();
 
@@ -96,7 +31,7 @@
 	const scanBatch = createAbortableBatch();
 
 	const totalCount = $derived.by(() =>
-		SEVERITY_ORDER.reduce((sum, key) => sum + (counts.get(key) ?? 0), 0)
+		SCAN_SEVERITY_ORDER.reduce((sum, key) => sum + (counts.get(key) ?? 0), 0)
 	);
 	const integrationCount = $derived(counts.get('integration') ?? 0);
 
@@ -132,7 +67,6 @@
 
 {#if phase === 'scanning'}
 	<span class="rotector-scan-progress-wrapper">
-		<img alt="" height="14" src={getAssetUrl('/icon/16.png')} width="14" />
 		<span
 			class="rotector-scan-progress"
 			aria-label={$_('scan_progress_aria')}
@@ -174,18 +108,17 @@
 	</span>
 {:else if phase === 'complete'}
 	<span class="rotector-scan-results">
-		<img alt="" height="14" src={getAssetUrl('/icon/16.png')} width="14" />
 		{#if totalCount === 0 && integrationCount === 0}
 			<span class="rotector-scan-chip rotector-scan-chip-empty">
 				{$_('scan_complete_empty')}
 			</span>
 		{:else}
 			<span class="rotector-scan-bar">
-				{#each SEVERITY_ORDER as key (key)}
+				{#each SCAN_SEVERITY_ORDER as key (key)}
 					{@const count = counts.get(key) ?? 0}
 					{#if count > 0}
 						<span
-							style:background-color={CATEGORIES[key].color}
+							style:background-color={SCAN_CATEGORY_PRESENTATION[key].color}
 							style:width="{(count / totalCount) * 100}%"
 							class="rotector-scan-segment"
 						></span>
@@ -193,20 +126,21 @@
 				{/each}
 			</span>
 			<span class="rotector-scan-chips" aria-label={$_('scan_summary_aria')} role="group">
-				{#each SEVERITY_ORDER as key (key)}
+				{#each SCAN_SEVERITY_ORDER as key (key)}
 					{@const count = counts.get(key) ?? 0}
+					{@const presentation = SCAN_CATEGORY_PRESENTATION[key]}
 					{#if count > 0}
 						<span
-							style:color={CATEGORIES[key].color}
+							style:color={presentation.color}
 							class="rotector-scan-chip"
 							aria-label={$_('scan_chip_aria', {
-								values: { count, label: $_(CATEGORIES[key].labelKey) }
+								values: { count, label: $_(presentation.labelKey) }
 							})}
-							title={$_(CATEGORIES[key].labelKey)}
+							title={$_(presentation.labelKey)}
 						>
 							<StatusIcon
-								name={CATEGORIES[key].icon}
-								color={CATEGORIES[key].color}
+								name={presentation.icon}
+								color={presentation.color}
 								size={13}
 								strokeWidth={2.5}
 							/>
@@ -216,16 +150,19 @@
 				{/each}
 				{#if integrationCount > 0}
 					<span
-						style:color={CATEGORIES.integration.color}
+						style:color={SCAN_CATEGORY_PRESENTATION.integration.color}
 						class="rotector-scan-chip rotector-scan-chip-integration"
 						aria-label={$_('scan_chip_aria', {
-							values: { count: integrationCount, label: $_('tooltip_status_integration') }
+							values: {
+								count: integrationCount,
+								label: $_('tooltip_status_integration')
+							}
 						})}
 						title={$_('tooltip_status_integration')}
 					>
 						<StatusIcon
-							name={CATEGORIES.integration.icon}
-							color={CATEGORIES.integration.color}
+							name={SCAN_CATEGORY_PRESENTATION.integration.icon}
+							color={SCAN_CATEGORY_PRESENTATION.integration.color}
 							size={13}
 							strokeWidth={2.5}
 						/>

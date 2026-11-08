@@ -3,32 +3,21 @@ import { fetchAllUserGroupIds } from '../roblox/groups';
 import { groupStatusService } from './entity-status';
 import { queryMultipleUsers, getEnabledCustomApis } from './unified-query';
 import { getAssetUrl } from '../../utils/assets';
+import type { CustomApiConfig, CombinedStatus } from '../../types/custom-api';
 import type { UserStatus } from '../../types/api';
-import type { CombinedStatus, CustomApiResult, CustomApiConfig } from '../../types/custom-api';
-import { LOOKUP_CONTEXT, STATUS } from '../../types/constants';
+import { LOOKUP_CONTEXT } from '../../types/constants';
 import {
-	calculateStatusBadges,
-	pickHighestSeverityCustomFlag,
-	pickHighestSeveritySystemResult
-} from '../../utils/status/status-utils';
+	combinedResultToCategory,
+	flagToCategory,
+	type ScanCategory,
+	type ScanCounts
+} from '../../utils/status/scan-category';
+
+export type { ScanCategory, ScanCounts } from '../../utils/status/scan-category';
 
 const SCAN_PHASE_CHECK_START = 30;
 const SCAN_PHASE_CHECK_RANGE = 70;
 const FRIEND_SCAN_PROGRESS_MAX = 95;
-
-export type ScanCategory =
-	| 'unsafe'
-	| 'redacted'
-	| 'mixed'
-	| 'pending'
-	| 'past'
-	| 'provisional'
-	| 'queued'
-	| 'outfit'
-	| 'integration'
-	| 'unknown'
-	| 'safe';
-export type ScanCounts = Map<ScanCategory, number>;
 
 // Per-provider resolution counts surfaced alongside the percentage so the bar
 // can show e.g. "(65/248 SIGMANET, 80/248 RAB, 20/248 TASE)".
@@ -43,9 +32,26 @@ export interface ScanProviderProgress {
 export interface ScanProgressDetail {
 	total: number;
 	providers: ScanProviderProgress[];
+	// Live tag counts for the entities resolved so far, so the scan overview can
+	// fill in tag types while the search is still running instead of staying
+	// empty until the whole batch finishes.
+	counts?: ScanCounts;
 }
 
 export type ScanProgressCallback = (pct: number, detail?: ScanProgressDetail) => void;
+
+// Optional observer used by the friends-page tag filters. The scan already
+// queries every friend, so the filters reuse those results instead of issuing
+// a second full lookup just to know which tags are present.
+export interface FriendScanHooks {
+	onFriendIds?: (friendIds: string[]) => void;
+	onFriendResult?: (
+		friendId: string,
+		category: ScanCategory | null,
+		fromIntegration: boolean,
+		combined: CombinedStatus<UserStatus>
+	) => void;
+}
 
 // Dedicated readout-only logos for the scan progress chips. These deliberately
 // differ from the provider's landscapeImageDataUrl (used by tooltip tabs etc):
@@ -87,96 +93,25 @@ function buildZeroedDetail(total: number): ScanProgressDetail {
 	return { total, providers };
 }
 
-function flagToCategory(flagType: number): ScanCategory {
-	switch (flagType) {
-		case STATUS.FLAGS.PENDING: {
-			return 'pending';
-		}
-		case STATUS.FLAGS.UNSAFE: {
-			return 'unsafe';
-		}
-		case STATUS.FLAGS.REDACTED: {
-			return 'redacted';
-		}
-		case STATUS.FLAGS.MIXED: {
-			return 'mixed';
-		}
-		case STATUS.FLAGS.PAST_OFFENDER: {
-			return 'past';
-		}
-		case STATUS.FLAGS.PROVISIONAL: {
-			return 'provisional';
-		}
-		case STATUS.FLAGS.QUEUED: {
-			return 'queued';
-		}
-		case STATUS.FLAGS.SAFE: {
-			return 'safe';
-		}
-		default: {
-			return 'unknown';
-		}
-	}
-}
-
-// One bucket per friend, plus whether a custom API was among the sources that flagged them
-interface ScanBucket {
-	category: ScanCategory | null;
-	fromIntegration: boolean;
-}
-
-// The system provider whose verdict represents the friend: the most severe one across
-// SIGMANET/RAB/TASE, so a clean service cannot mask a detection from a sibling one.
-function getSystemApiResult(
-	combined: CombinedStatus<UserStatus>
-): Pick<CustomApiResult<UserStatus>, 'data' | 'error' | 'loading'> | null {
-	const worst = pickHighestSeveritySystemResult(combined);
-	if (!worst) return null;
-	const result = worst[1];
-	return { data: result.data, error: result.error, loading: result.loading };
-}
-
-// Picks one bucket per friend, applying outfit/queued overrides. Custom APIs are bucketed by the
-// severity they actually reported instead of a single catch-all, but a non-flagged system API
-// verdict never masks a partner's detection.
-function combinedResultToCategory(combined: CombinedStatus<UserStatus>): ScanBucket {
-	const systemResult = getSystemApiResult(combined);
-	const data = systemResult?.data;
-	const customFlagType = pickHighestSeverityCustomFlag(combined);
-	const customCategory = customFlagType === null ? null : flagToCategory(customFlagType);
-	const fromIntegration = customCategory !== null;
-
-	// System APIs unreachable: still surface custom-API detections rather than dropping the entity,
-	// which would both hide the only available signal and shrink the scan total.
-	if (!data) {
-		return { category: customCategory, fromIntegration };
-	}
-
-	if (calculateStatusBadges(data).isOutfitOnly && customCategory === null) {
-		return { category: 'outfit', fromIntegration };
-	}
-
-	const isProcessedQueue = data.flagType === STATUS.FLAGS.QUEUED && data.processed === true;
-	const category = isProcessedQueue ? 'safe' : flagToCategory(data.flagType);
-
-	// 'safe' and 'outfit' are both non-flagged verdicts, so a partner's detection outranks them
-	// and inherits the severity it reported
-	if (customCategory !== null && (category === 'safe' || category === 'outfit')) {
-		return { category: customCategory, fromIntegration };
-	}
-
-	return { category, fromIntegration };
-}
-
 function increment(counts: ScanCounts, category: ScanCategory): void {
 	counts.set(category, (counts.get(category) ?? 0) + 1);
+}
+
+function decrement(counts: ScanCounts, category: ScanCategory): void {
+	const next = (counts.get(category) ?? 0) - 1;
+	if (next > 0) {
+		counts.set(category, next);
+	} else {
+		counts.delete(category);
+	}
 }
 
 export async function scanFriendsForUser(
 	userId: string,
 	isOwnFriends: boolean,
 	onProgress: ScanProgressCallback,
-	signal: AbortSignal
+	signal: AbortSignal,
+	hooks?: FriendScanHooks
 ): Promise<ScanCounts> {
 	const counts: ScanCounts = new Map();
 
@@ -190,11 +125,41 @@ export async function scanFriendsForUser(
 
 	if (friendIds.length === 0) return counts;
 
+	hooks?.onFriendIds?.(friendIds.map((id) => id.toString()));
+
 	onProgress(SCAN_PHASE_CHECK_START, buildZeroedDetail(friendIds.length));
 
 	const lookupContext = isOwnFriends ? LOOKUP_CONTEXT.FRIENDS : undefined;
 	const completed = new Set<string>();
 	const total = friendIds.length;
+
+	// Live tally of the buckets each friend currently falls into. A provider
+	// answering can move a friend between buckets (e.g. safe → unsafe), so keep
+	// the last bucket per friend and apply the difference instead of re-counting
+	// the whole batch on every update.
+	const liveCounts: ScanCounts = new Map();
+	const liveBuckets = new Map<
+		string,
+		{ category: ScanCategory | null; fromIntegration: boolean }
+	>();
+
+	const trackBucket = (
+		friendId: string,
+		category: ScanCategory | null,
+		fromIntegration: boolean
+	) => {
+		const previous = liveBuckets.get(friendId);
+		if (previous?.category === category && previous.fromIntegration === fromIntegration) {
+			return;
+		}
+		if (previous?.category) decrement(liveCounts, previous.category);
+		if (previous?.fromIntegration) decrement(liveCounts, 'integration');
+		if (category) increment(liveCounts, category);
+		if (fromIntegration) increment(liveCounts, 'integration');
+		liveBuckets.set(friendId, { category, fromIntegration });
+	};
+
+	const snapshotCounts = (): ScanCounts => new Map(liveCounts);
 
 	const results = await queryMultipleUsers(
 		friendIds.map((id) => id.toString()),
@@ -202,6 +167,11 @@ export async function scanFriendsForUser(
 			lookupContext,
 			signal,
 			onUpdate: (friendId, combined, providers) => {
+				const bucket = combinedResultToCategory(combined);
+				trackBucket(friendId, bucket.category, bucket.fromIntegration);
+				hooks?.onFriendResult?.(friendId, bucket.category, bucket.fromIntegration, combined);
+				const live = snapshotCounts();
+
 				// Completion tracks every enabled API the user can actually access —
 				// system providers plus custom ones — so a friend counts once all of
 				// *their* sources have answered, whichever those are.
@@ -222,7 +192,11 @@ export async function scanFriendsForUser(
 				// per-provider counts; the per-friend fallback is only a safety net.
 				if (providers.length === 0) {
 					const pct = SCAN_PHASE_CHECK_START + (completed.size / total) * SCAN_PHASE_CHECK_RANGE;
-					onProgress(Math.min(pct, FRIEND_SCAN_PROGRESS_MAX));
+					onProgress(Math.min(pct, FRIEND_SCAN_PROGRESS_MAX), {
+						total,
+						providers: [],
+						counts: live
+					});
 					return;
 				}
 				const resolvedSum = providers.reduce((sum, p) => sum + p.resolved, 0);
@@ -231,6 +205,7 @@ export async function scanFriendsForUser(
 					(resolvedSum / (total * providers.length)) * SCAN_PHASE_CHECK_RANGE;
 				const detail: ScanProgressDetail = {
 					total,
+					counts: live,
 					providers: sortProviders(providers).map((p) => ({
 						apiId: p.apiId,
 						apiName: p.apiName,
@@ -244,8 +219,9 @@ export async function scanFriendsForUser(
 		}
 	);
 
-	for (const combined of results.values()) {
+	for (const [friendId, combined] of results.entries()) {
 		const { category, fromIntegration } = combinedResultToCategory(combined);
+		hooks?.onFriendResult?.(friendId, category, fromIntegration, combined);
 		if (category) increment(counts, category);
 		// Overlaps the severity buckets above, so the scan bar keeps it out of its total
 		if (fromIntegration) increment(counts, 'integration');

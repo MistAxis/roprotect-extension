@@ -177,6 +177,7 @@
 
 		try {
 			isLoadingMembers = true;
+			membersHidden = false;
 			mountedComponents.destroyAll();
 
 			// Display remaining members for carryover-only page
@@ -787,6 +788,9 @@
 			{:else if membersHidden}
 				<div class="group-members-empty">
 					<span>{$_('group_members_hidden')}</span>
+					<button class="group-members-nav-btn" onclick={() => loadRoles()} type="button"
+						>{$_('group_members_retry')}</button
+					>
 				</div>
 			{:else if errorMessage}
 				<div class="group-members-error">

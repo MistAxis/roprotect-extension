@@ -2,6 +2,26 @@ import type { Changelog } from '@/lib/types/changelog';
 
 export const CHANGELOGS: Changelog[] = [
 	{
+		id: 'v2.23.0',
+		version: '2.23.0',
+		date: '2026-11-07',
+		title: 'Status filters for your friends page',
+		summary:
+			"The friends page scan now adds status chips next to Roblox's own filters. A chip only appears when at least one friend matches it, and selecting one shows those friends as normal Roblox cards instead of a separate list.",
+		changes: [
+			{
+				type: 'added',
+				description:
+					'Friends page status filter chips that appear only for tags present in the scanned friends list'
+			},
+			{
+				type: 'added',
+				description:
+					'Filtered friends are shown in the native Roblox card format with status indicators, blur settings, and paging'
+			}
+		]
+	},
+	{
 		id: 'v2.22.0',
 		version: '2.22.0',
 		date: '2026-10-14',

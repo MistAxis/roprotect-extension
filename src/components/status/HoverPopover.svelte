@@ -186,13 +186,22 @@
 			<p>{$_('tooltip_discord_info_message')}</p>
 			<ul class="source-info-list">
 				<li class="source-info-list-item">
-					<span><strong>Joined</strong> - {$_('tooltip_discord_info_joined')}</span>
+					<span
+						><strong>{$_('tooltip_discord_info_joined_label')}</strong> -
+						{$_('tooltip_discord_info_joined')}</span
+					>
 				</li>
 				<li class="source-info-list-item">
-					<span><strong>First seen</strong> - {$_('tooltip_discord_info_first_seen')}</span>
+					<span
+						><strong>{$_('tooltip_discord_info_first_seen_label')}</strong> -
+						{$_('tooltip_discord_info_first_seen')}</span
+					>
 				</li>
 				<li class="source-info-list-item">
-					<span><strong>Updated</strong> - {$_('tooltip_discord_info_updated')}</span>
+					<span
+						><strong>{$_('tooltip_discord_info_updated_label')}</strong> -
+						{$_('tooltip_discord_info_updated')}</span
+					>
 				</li>
 			</ul>
 		{:else if active.kind.endsWith('-info')}

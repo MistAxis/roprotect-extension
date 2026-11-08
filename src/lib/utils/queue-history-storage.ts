@@ -13,34 +13,54 @@ async function writeQueueHistory(entries: QueueHistoryEntry[]): Promise<void> {
 	await setStorage('local', QUEUE_HISTORY_KEY, entries);
 }
 
+// Content and background both mutate the same array. Serializing every
+// read-modify-write prevents one side from dropping the other's entry or
+// reverting a processed transition.
+let writeChain: Promise<unknown> = Promise.resolve();
+
+function serializeWrite<T>(task: () => Promise<T>): Promise<T> {
+	const run = writeChain.then(task, task);
+	writeChain = run.then(
+		() => undefined,
+		() => undefined
+	);
+	return run;
+}
+
 // Dedupes any prior entry for the same userId and trims to MAX_QUEUE_HISTORY_SIZE
 export async function addQueueEntry(userId: number): Promise<void> {
-	const current = await readQueueHistory();
-	const newEntry: QueueHistoryEntry = {
-		userId,
-		queuedAt: Date.now(),
-		processed: false,
-		processedAt: null,
-		processing: false,
-		flagged: false,
-		notified: false
-	};
-	const updated = [newEntry, ...current.filter((e) => e.userId !== userId)].slice(
-		0,
-		MAX_QUEUE_HISTORY_SIZE
-	);
-	await writeQueueHistory(updated);
+	return serializeWrite(async () => {
+		const current = await readQueueHistory();
+		const newEntry: QueueHistoryEntry = {
+			userId,
+			queuedAt: Date.now(),
+			processed: false,
+			processedAt: null,
+			processing: false,
+			flagged: false,
+			notified: false
+		};
+		const updated = [newEntry, ...current.filter((e) => e.userId !== userId)].slice(
+			0,
+			MAX_QUEUE_HISTORY_SIZE
+		);
+		await writeQueueHistory(updated);
+	});
 }
 
 // Removes the entry for the given userId, no-op if absent
 export async function removeQueueEntry(userId: number): Promise<void> {
-	const current = await readQueueHistory();
-	const updated = current.filter((e) => e.userId !== userId);
-	await writeQueueHistory(updated);
+	return serializeWrite(async () => {
+		const current = await readQueueHistory();
+		const updated = current.filter((e) => e.userId !== userId);
+		await writeQueueHistory(updated);
+	});
 }
 
 export async function clearQueueHistory(): Promise<void> {
-	await writeQueueHistory([]);
+	return serializeWrite(async () => {
+		await writeQueueHistory([]);
+	});
 }
 
 export async function readUnprocessedEntries(): Promise<QueueHistoryEntry[]> {
@@ -66,36 +86,38 @@ export async function applyQueueStatusUpdate(
 	userId: number,
 	status: QueueStatusItem
 ): Promise<QueueHistoryEntry | null> {
-	const current = await readQueueHistory();
-	const index = current.findIndex((e) => e.userId === userId);
-	const entry = current[index];
-	if (!entry) return null;
+	return serializeWrite(async () => {
+		const current = await readQueueHistory();
+		const index = current.findIndex((e) => e.userId === userId);
+		const entry = current[index];
+		if (!entry) return null;
 
-	if (
-		entry.processed === status.processed &&
-		entry.processing === status.processing &&
-		entry.flagged === status.flagged
-	) {
-		return null;
-	}
+		if (
+			entry.processed === status.processed &&
+			entry.processing === status.processing &&
+			entry.flagged === status.flagged
+		) {
+			return null;
+		}
 
-	const crossingProcessed = !entry.processed && status.processed;
+		const crossingProcessed = !entry.processed && status.processed;
 
-	const updated = [...current];
-	updated[index] = {
-		...entry,
-		processed: status.processed,
-		processedAt: status.processed_at ? status.processed_at * 1000 : null,
-		processing: status.processing,
-		flagged: status.flagged,
-		notified: crossingProcessed ? true : entry.notified
-	};
+		const updated = [...current];
+		updated[index] = {
+			...entry,
+			processed: status.processed,
+			processedAt: status.processed_at ? status.processed_at * 1000 : null,
+			processing: status.processing,
+			flagged: status.flagged,
+			notified: crossingProcessed ? true : entry.notified
+		};
 
-	await writeQueueHistory(updated);
+		await writeQueueHistory(updated);
 
-	if (crossingProcessed && status.flagged) {
-		await incrementSuccessfulFlagCount();
-	}
+		if (crossingProcessed && status.flagged) {
+			await incrementSuccessfulFlagCount();
+		}
 
-	return crossingProcessed ? (updated[index] ?? null) : null;
+		return crossingProcessed ? (updated[index] ?? null) : null;
+	});
 }

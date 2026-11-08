@@ -180,7 +180,11 @@
 /* =================================
    BADGE CLASSES
    ================================= */
-@utility badge-container {
+
+/* Prefixed: content.css is injected page-global, and Roblox's own game-badge
+   markup uses a plain `.badge-container`, which this absolute positioning
+   would collapse into a 15px stack. */
+@utility rotector-badge-container {
 	@apply pointer-events-none absolute -bottom-1 left-4 block-[15px] inline-[15px];
 }
 

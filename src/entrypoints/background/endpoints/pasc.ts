@@ -6,9 +6,38 @@ import { SETTINGS_KEYS } from '@/lib/types/settings';
 import { getStorage } from '@/lib/utils/storage';
 import { validateEntityId } from '@/lib/utils/dom/sanitizer';
 import { parseUserStatus } from '@/lib/schemas/rotector';
+import { sanitizeFilename } from '@/lib/utils/filename';
 import { makeHttpRequest } from '../http-client';
 
 const PascClearanceLevelSchema = v.picklist(['0', 'A1', 'A2', 'M1', 'M2']);
+
+// Reads a response body while enforcing a hard byte cap, so a chunked response
+// without Content-Length cannot exhaust the worker's memory.
+async function readBodyWithLimit(response: Response, limit: number): Promise<Uint8Array> {
+	if (!response.body) return new Uint8Array(0);
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > limit) {
+			await reader.cancel().catch(() => {});
+			throw new Error(
+				`PASC file download rejected: file exceeds ${String(limit / (1024 * 1024))} MB`
+			);
+		}
+		chunks.push(value);
+	}
+	const out = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return out;
+}
 
 const PascFileDescriptorSchema = v.object({
 	fileId: v.string(),
@@ -145,7 +174,7 @@ export async function uploadPascFile(
 	form.append(
 		'file',
 		new Blob([bytes], { type: contentType || 'application/octet-stream' }),
-		filename
+		sanitizeFilename(filename, 'upload')
 	);
 	if (access) form.append('access', access);
 
@@ -173,7 +202,7 @@ export async function uploadPascFile(
 	const descriptor = v.parse(PascFileDescriptorSchema, payload.data);
 	return {
 		fileId: descriptor.fileId,
-		name: descriptor.name ?? filename,
+		name: sanitizeFilename(descriptor.name ?? filename, 'upload'),
 		size: descriptor.size ?? bytes.byteLength,
 		access: descriptor.access ?? access ?? null
 	};
@@ -219,13 +248,7 @@ export async function downloadPascFile(
 			`PASC file download rejected: file exceeds ${String(PASC_FILE_LIMITS.MAX_BYTES / (1024 * 1024))} MB`
 		);
 	}
-	const buffer = await response.arrayBuffer();
-	if (buffer.byteLength > PASC_FILE_LIMITS.MAX_BYTES) {
-		throw new Error(
-			`PASC file download rejected: file exceeds ${String(PASC_FILE_LIMITS.MAX_BYTES / (1024 * 1024))} MB`
-		);
-	}
-	const view = new Uint8Array(buffer);
+	const view = await readBodyWithLimit(response, PASC_FILE_LIMITS.MAX_BYTES);
 	let binary = '';
 	for (let i = 0; i < view.length; i += 32_768) {
 		binary += String.fromCharCode(...view.subarray(i, i + 32_768));
@@ -234,7 +257,7 @@ export async function downloadPascFile(
 	return {
 		bytesBase64: btoa(binary),
 		contentType: response.headers.get('Content-Type') || 'application/octet-stream',
-		filename: filenameFromDisposition(disposition, fileId)
+		filename: sanitizeFilename(filenameFromDisposition(disposition, fileId), 'download')
 	};
 }
 

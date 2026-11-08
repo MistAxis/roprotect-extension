@@ -42,6 +42,28 @@
 	let currentPage = $state(1);
 	let hasNextPage = $state(false);
 
+	// QueuePopup stays mounted across submissions with different userIds; reset
+	// the picker so one user's outfits/selection never bleed into another's.
+	let loadedUserId: string | null = null;
+	$effect(() => {
+		const nextUserId = String(userId);
+		if (nextUserId === loadedUserId) return;
+		const hadPrevious = loadedUserId !== null;
+		loadedUserId = nextUserId;
+
+		outfits = [];
+		currentAvatar = null;
+		currentPage = 1;
+		hasNextPage = false;
+		isExpanded = false;
+		isLoading = false;
+		error = null;
+		modal3DOutfit = null;
+		if (hadPrevious) selectedOutfits = [];
+	});
+
+	let loadRequestId = 0;
+
 	const selectionCount = $derived(selectedOutfits.length);
 	const canSelectMore = $derived(selectionCount < maxSelections);
 	const hasSelections = $derived(selectionCount > 0);
@@ -111,6 +133,7 @@
 	}
 
 	async function loadOutfits(page: number) {
+		const requestId = ++loadRequestId;
 		isLoading = true;
 		error = null;
 
@@ -119,16 +142,18 @@
 				page === 1 && !currentAvatar ? getCurrentAvatarInfo(userId) : Promise.resolve(null),
 				getUserOutfits(userId, page)
 			]);
+			if (requestId !== loadRequestId) return;
 			if (avatarInfo) currentAvatar = avatarInfo;
 			outfits = result.outfits;
 			currentPage = result.currentPage;
 			hasNextPage = result.hasNextPage;
 			logger.debug('Loaded outfits', { page, count: outfits.length, hasNextPage });
 		} catch (error_) {
+			if (requestId !== loadRequestId) return;
 			error = 'Failed to load outfits';
 			logger.error('Failed to load outfits:', error_);
 		} finally {
-			isLoading = false;
+			if (requestId === loadRequestId) isLoading = false;
 		}
 	}
 

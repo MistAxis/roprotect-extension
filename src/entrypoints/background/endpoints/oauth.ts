@@ -2,6 +2,7 @@ import { API_CONFIG } from '@/lib/types/constants';
 import type { DiscordSignInPoll, DiscordSignInStart } from '@/lib/types/api';
 import { parseDiscordSignInPoll, parseDiscordSignInStart } from '@/lib/schemas/oauth';
 import { buildHttpError } from '@/lib/utils/api/api-error';
+import { isHostOrSubdomain, sanitizeRemoteUrl } from '@/lib/utils/dom/sanitizer';
 
 // The portal routes are deliberately unauthenticated and CORS-open, so they are
 // fetched here rather than through makeHttpRequest: that helper would attach
@@ -46,10 +47,29 @@ async function fetchOAuth<T>(path: string, parse: (payload: unknown) => T): Prom
 
 // Starts the handshake and opens Discord. The authorize URL is used exactly as
 // issued: adding or normalizing parameters would invalidate the Discord state.
+// It still has to be a Discord HTTPS URL, otherwise a compromised portal
+// response could navigate the user (and the OAuth state) anywhere.
 export async function startDiscordSignIn(): Promise<DiscordSignInStart> {
 	const data = await fetchOAuth(API_CONFIG.ENDPOINTS.OAUTH_PAIR, parseDiscordSignInStart);
-	await browser.tabs.create({ url: data.authorizeUrl });
-	return data;
+
+	const authorizeUrl = sanitizeRemoteUrl(data.authorizeUrl);
+	const authorizeHost = trustedDiscordHost(authorizeUrl);
+	if (!authorizeUrl || !authorizeHost) {
+		throw new Error('Invalid Discord authorization URL');
+	}
+
+	await browser.tabs.create({ url: authorizeUrl });
+	return { ...data, authorizeUrl };
+}
+
+function trustedDiscordHost(url: string | null): string {
+	if (!url) return '';
+	try {
+		const host = new URL(url).hostname;
+		return isHostOrSubdomain(host, 'discord.com') ? host : '';
+	} catch {
+		return '';
+	}
 }
 
 // Polling is the only transport: the extension never sees the Discord redirect.

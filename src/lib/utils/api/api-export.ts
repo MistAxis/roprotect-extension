@@ -21,11 +21,24 @@ function exportCustomApi(config: CustomApiConfig): string {
 	return LZString.compressToBase64(JSON.stringify(exportable));
 }
 
+const MAX_ENCODED_LENGTH = 200_000;
+const MAX_DECOMPRESSED_LENGTH = 64_000;
+
 // Throws with a user-readable message on bad base64, bad JSON, or schema mismatch
 export function importCustomApi(encodedData: string): ImportedApiConfig {
+	// The share string is pasted by the user, so cap it before LZString allocates
+	// the output buffer: a small highly-compressible blob can otherwise expand to
+	// hundreds of megabytes and hang the popup.
+	if (encodedData.length > MAX_ENCODED_LENGTH) {
+		throw new Error('Encoded API data is too large.');
+	}
+
 	const decompressed = LZString.decompressFromBase64(encodedData);
 	if (!decompressed) {
 		throw new Error('Failed to decompress API data. The encoded string may be corrupted.');
+	}
+	if (decompressed.length > MAX_DECOMPRESSED_LENGTH) {
+		throw new Error('Decoded API data is too large.');
 	}
 
 	let parsed: unknown;

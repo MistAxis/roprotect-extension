@@ -33,8 +33,13 @@ export async function initializeSettings(): Promise<void> {
 	try {
 		const allStored = await getAllStorage('sync');
 
+		// Non-setting values that intentionally live in sync storage. Purging
+		// these broke cross-device installation IDs and fingerprint reuse.
+		const reservedKeys = new Set(['installationId', 'deviceFingerprint']);
 		const validKeys = new Set<string>(Object.values(SETTINGS_KEYS));
-		const obsoleteKeys = Object.keys(allStored).filter((key) => !validKeys.has(key));
+		const obsoleteKeys = Object.keys(allStored).filter(
+			(key) => !validKeys.has(key) && !reservedKeys.has(key)
+		);
 		if (obsoleteKeys.length > 0) {
 			await removeStorage('sync', obsoleteKeys);
 			logger.debug('Removed obsolete settings:', obsoleteKeys);

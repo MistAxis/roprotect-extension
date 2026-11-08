@@ -349,56 +349,47 @@
 			{@const isExpanded = expandedAccounts.has(account.id)}
 			{@const sourceInfo = getSourceInfo(account.sources)}
 			<div class="discord-account-card" class:expanded={isExpanded}>
-				<button
-					class="discord-account-header"
-					onclick={() => toggleAccount(account.id)}
-					type="button"
-				>
-					<span
-						style:transform={isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'}
-						class="discord-chevron-wrapper"
+				<div class="discord-account-header">
+					<button
+						class="discord-account-toggle"
+						aria-expanded={isExpanded}
+						onclick={() => toggleAccount(account.id)}
+						type="button"
 					>
-						<ChevronRight class="discord-chevron" size={14} />
-					</span>
-					<span class="discord-icon"><SiDiscord size={14} /></span>
-					<span class="discord-account-id">
-						{account.id}
-					</span>
-					<span
+						<span
+							style:transform={isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'}
+							class="discord-chevron-wrapper"
+						>
+							<ChevronRight class="discord-chevron" size={14} />
+						</span>
+						<span class="discord-icon"><SiDiscord size={14} /></span>
+						<span class="discord-account-id">
+							{account.id}
+						</span>
+					</button>
+					<button
 						class="discord-copy-btn"
 						class:copied={copiedId === account.id}
 						aria-label={$_('tooltip_discord_copy_id')}
 						onclick={(e: MouseEvent) => handleCopyId(e, account.id)}
-						onkeydown={(e: KeyboardEvent) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								void handleCopyId(e, account.id);
-							}
-						}}
-						role="button"
-						tabindex="0"
 						title={$_(
 							copiedId === account.id ? 'tooltip_discord_copied' : 'tooltip_discord_copy_id'
 						)}
+						type="button"
 					>
 						{#if copiedId === account.id}
 							<Check size={12} />
 						{:else}
 							<Copy size={12} />
 						{/if}
-					</span>
+					</button>
 					{#if quarryServers[account.id]}
 						<span class="discord-quarry-flag" title={$_('tooltip_discord_quarry_flag_title')}>
 							<ShieldAlert size={12} />
 						</span>
 					{/if}
 					{#each sourceInfo as source (source.code)}
-						<ExtLink
-							class="discord-source-link"
-							href={source.url}
-							onclick={(e: MouseEvent) => e.stopPropagation()}
-							title={source.name}
-						>
+						<ExtLink class="discord-source-link" href={source.url} title={source.name}>
 							{@render sourceIcon(source.code)}
 						</ExtLink>
 					{/each}
@@ -412,7 +403,7 @@
 							)}
 						/>
 					</span>
-				</button>
+				</div>
 
 				<div class="discord-account-content" hidden={!isExpanded}>
 					{#each quarryServers[account.id] ?? [] as quarryServer (quarryServer)}

@@ -6,15 +6,17 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { logger } from '@/lib/utils/logging/logger';
 import { PageControllerManager } from '@/lib/controllers/PageControllerManager';
 import { themeManager } from '@/lib/utils/theme';
-import { initializeSettings } from '@/lib/stores/settings';
+import { initializeSettings, settings } from '@/lib/stores/settings';
 import { extensionFeaturesEnabled } from '@/lib/stores/legal';
 import { loadStoredLanguagePreference } from '@/lib/stores/i18n';
 import { loadCustomApis } from '@/lib/stores/custom-apis';
 import {
 	initializeRestrictedAccess,
+	resetRestrictedAccess,
 	setupRestrictedAccessListener
 } from '@/lib/stores/restricted-access';
 import { subscribeStorageKey } from '@/lib/utils/storage';
+import { clearViewerScopedCaches } from '@/lib/utils/caching/viewer-cache';
 import {
 	injectBlurStyles,
 	injectDefaultBlurStyles,
@@ -94,13 +96,24 @@ export default defineContentScript({
 			await loadCustomApis();
 			logger.debug('Custom APIs loaded successfully');
 
+			// Set once navigation is wired below. A key change re-runs the current
+			// URL so page controllers rebuild with the new viewer's data.
+			let reapplyNavigation: (() => void) | null = null;
+
 			// Reload custom APIs when API key changes (so new system APIs from whoami are loaded)
 			subscribeStorageKey<string>('sync', 'apiKey', async (newKey) => {
+				// A different key is a different viewer: drop cached verdicts,
+				// PASC clearance/case details, and linked Discord data before
+				// anything can be rendered under the new identity.
+				clearViewerScopedCaches();
+				// A different key may have different access; never keep a stale block.
+				await resetRestrictedAccess();
 				if (newKey?.trim()) {
 					logger.debug('API key changed, reloading custom APIs...');
 					await loadCustomApis();
 					logger.debug('Custom APIs reloaded successfully');
 				}
+				reapplyNavigation?.();
 			});
 
 			logger.debug('Initializing access state...');
@@ -129,35 +142,34 @@ export default defineContentScript({
 			type Overlay = Awaited<ReturnType<typeof createShadowRootUi>>;
 			let overlay: Overlay | null = null;
 			let overlayApp: ReturnType<typeof mount> | null = null;
+			let overlayAttached = false;
+			let overlayLoading: Promise<void> | null = null;
 			let visualsActive = false;
-			let activation: Promise<void> | null = null;
 			let activationEpoch = 0;
 			let telemetryStarted = false;
 			let currentUrl = globalThis.location.href;
 			let navigationToken = 0;
 			let listenersInstalled = false;
+			let navPollId: ReturnType<typeof setInterval> | null = null;
 
-			// Activation is async (CSS fetch + shadow mount). Each call captures an
-			// epoch; deactivateVisuals bumps it so an in-flight mount cannot finish
-			// after teardown and leave `visualsActive` true with no overlay attached.
 			function visualsAreActive(): boolean {
 				return visualsActive;
 			}
 
-			async function activateVisuals(): Promise<void> {
-				if (visualsAreActive()) return;
-				if (activation) {
-					await activation;
-					if (visualsAreActive()) return;
-					// Previous activation was superseded (or failed); retry below.
-				}
+			// Read through a function: TypeScript narrows the module-level flag from an
+			// earlier check and would otherwise treat the post-await re-check as dead.
+			function isOverlayAttached(): boolean {
+				return overlayAttached;
+			}
 
-				const epoch = ++activationEpoch;
-				activation = (async () => {
-					injectDefaultBlurStyles();
-					injectBlurStyles();
-					logger.debug('Blur styles injected');
+			// Mounts the shadow-root overlay (onboarding, API-key prompt, toasts,
+			// modals). Kept separate from `activateVisuals` so a user without an API
+			// key still sees onboarding instead of a silently inert extension.
+			function ensureOverlay(): Promise<boolean> {
+				if (overlayAttached) return Promise.resolve(true);
 
+				// Single-flight: concurrent navigations must not create or mount twice.
+				overlayLoading ??= (async () => {
 					if (!overlay) {
 						const cssUrl = browser.runtime.getURL(
 							'/content-scripts/content.css' as Parameters<typeof browser.runtime.getURL>[0]
@@ -185,7 +197,7 @@ export default defineContentScript({
 								logger.debug('Shadow root overlay mounted');
 							},
 							onRemove() {
-								// Safety net for removals not initiated by deactivateVisuals.
+								// Safety net for removals not initiated by teardownOverlay.
 								const app = overlayApp;
 								overlayApp = null;
 								if (app) void unmount(app);
@@ -193,51 +205,35 @@ export default defineContentScript({
 							}
 						});
 					}
-					// Teardown (gate close / unsupported navigation) may have won
-					// while the stylesheet or shadow root was loading: never mount
-					// an overlay the current navigation already discarded.
-					if (epoch !== activationEpoch) {
-						const staleOverlay = overlay;
+
+					// Re-check after the await: teardown or another navigation may have
+					// won while the stylesheet and shadow root were loading.
+					const ui = overlay;
+					if (isOverlayAttached()) return;
+
+					try {
+						ui.mount();
+						overlayAttached = true;
+					} catch (error) {
+						// A failed mount must not leave a half-attached overlay that the
+						// next navigation mounts a second time.
 						overlay = null;
-						staleOverlay.remove();
-						return;
-					}
-
-					overlay.mount();
-
-					// Safety net for a teardown that raced the mount itself.
-					if (epoch !== activationEpoch) {
-						const staleOverlay = overlay;
-						overlay = null;
-						staleOverlay.remove();
-						return;
-					}
-
-					// Only mark active once the stylesheet fetch and mount succeeded, so a
-					// failed activation can be retried on the next navigation.
-					visualsActive = true;
-
-					if (!telemetryStarted) {
-						telemetryStarted = true;
-						void computeAndCacheDeviceFingerprint();
-						metricsCollector.start();
-					}
-				})()
-					.catch((error: unknown) => {
-						removeBlurStyles();
+						overlayAttached = false;
+						ui.remove();
 						throw error;
-					})
-					.finally(() => {
-						activation = null;
-					});
-				await activation;
+					}
+				})().finally(() => {
+					overlayLoading = null;
+				});
+
+				return overlayLoading.then(
+					() => overlayAttached,
+					() => false
+				);
 			}
 
-			function deactivateVisuals(): void {
-				activationEpoch++;
-				visualsActive = false;
-				removeBlurStyles();
-
+			function teardownOverlay(): void {
+				overlayAttached = false;
 				const app = overlayApp;
 				overlayApp = null;
 				if (app) void unmount(app);
@@ -245,18 +241,49 @@ export default defineContentScript({
 				const currentOverlay = overlay;
 				overlay = null;
 				currentOverlay?.remove();
+			}
+
+			async function activateVisuals(): Promise<void> {
+				if (visualsAreActive()) return;
+
+				injectDefaultBlurStyles();
+				injectBlurStyles();
+				logger.debug('Blur styles injected');
+
+				const epoch = ++activationEpoch;
+				const mounted = await ensureOverlay();
+
+				// Teardown (gate close / unsupported navigation) may have won while the
+				// stylesheet or shadow root was loading.
+				if (!mounted || epoch !== activationEpoch) return;
+
+				// Only mark active once the stylesheet fetch and mount succeeded, so a
+				// failed activation can be retried on the next navigation.
+				visualsActive = true;
+
+				if (!telemetryStarted) {
+					telemetryStarted = true;
+					void computeAndCacheDeviceFingerprint();
+					metricsCollector.start();
+				}
+			}
+
+			// Removes page-level features (blur + controllers) but keeps the overlay
+			// mounted so onboarding / API-key prompts remain available.
+			function deactivatePageFeatures(): void {
+				activationEpoch++;
+				visualsActive = false;
+				removeBlurStyles();
+			}
+
+			function deactivateVisuals(): void {
+				deactivatePageFeatures();
+				teardownOverlay();
 				logger.debug('Visuals deactivated for unsupported page');
 			}
 
 			async function handleUrl(url: string): Promise<void> {
 				const token = ++navigationToken;
-
-				// The gate is part of the URL contract: SPA navigation must not
-				// bypass onboarding/API-key state.
-				if (!get(extensionFeaturesEnabled)) {
-					deactivateVisuals();
-					return;
-				}
 
 				if (detectPageType(url) === null) {
 					deactivateVisuals();
@@ -264,11 +291,30 @@ export default defineContentScript({
 					return;
 				}
 
+				// Supported page: the overlay is mounted even while the feature gate is
+				// closed, otherwise a fresh install (no API key) would never see
+				// onboarding or the key prompt.
+				const mounted = await ensureOverlay();
+				if (!mounted) {
+					deactivateVisuals();
+					return;
+				}
+				if (token !== navigationToken) return;
+
+				// The gate is part of the URL contract: SPA navigation must not bypass
+				// onboarding/API-key state.
+				if (!get(extensionFeaturesEnabled)) {
+					deactivatePageFeatures();
+					await pageManager?.deactivate();
+					return;
+				}
+
 				await activateVisuals();
 
-				// Gate closed while activation was pending: no visuals may survive.
+				// Gate closed while activation was pending: no page features may survive.
 				if (!get(extensionFeaturesEnabled)) {
-					deactivateVisuals();
+					deactivatePageFeatures();
+					await pageManager?.deactivate();
 					return;
 				}
 				// A newer navigation owns the overlay/controller now.
@@ -281,6 +327,16 @@ export default defineContentScript({
 				void handleUrl(url).catch((error: unknown) => {
 					logger.error('Failed to handle navigation:', error, { url });
 				});
+			};
+
+			reapplyNavigation = () => {
+				const url = globalThis.location.href;
+				void (async () => {
+					// Force a clean rebuild: component state captured from the old
+					// key must not survive the viewer switch.
+					await pageManager?.deactivate();
+					navigate(url);
+				})();
 			};
 
 			const checkForNavigation = () => {
@@ -305,11 +361,15 @@ export default defineContentScript({
 				checkForNavigation();
 			};
 
+			// Roblox is an SPA that navigates with history.pushState, which never fires
+			// popstate. Poll the URL as a fallback (the content-script isolated world
+			// cannot patch the page's history object) so status UI follows the page.
 			const installNavigationListeners = (): void => {
 				if (listenersInstalled) return;
 				listenersInstalled = true;
 				globalThis.addEventListener('popstate', handlePopstate);
 				globalThis.addEventListener('hashchange', handleHashchange);
+				navPollId = setInterval(checkForNavigation, 500);
 			};
 
 			const removeNavigationListeners = (): void => {
@@ -317,33 +377,46 @@ export default defineContentScript({
 				listenersInstalled = false;
 				globalThis.removeEventListener('popstate', handlePopstate);
 				globalThis.removeEventListener('hashchange', handleHashchange);
+				if (navPollId) {
+					clearInterval(navPollId);
+					navPollId = null;
+				}
 			};
 
-			// The gate can open (API key accepted) and close (key removed or legal
-			// paused) during a session. Navigation listeners exist only while open.
-			const unsubscribeGate = extensionFeaturesEnabled.subscribe((enabled) => {
-				if (enabled) {
-					installNavigationListeners();
-					currentUrl = globalThis.location.href;
-					navigate(currentUrl);
-					return;
-				}
+			installNavigationListeners();
 
-				removeNavigationListeners();
-				navigationToken++;
-				deactivateVisuals();
-				void pageManager?.deactivate();
-				logger.debug('Waiting for onboarding + legal acceptance to initialize page controllers');
+			// The gate can open (API key accepted) or close (key removed) during a
+			// session; re-run the current URL through the gated path either way.
+			const unsubscribeGate = extensionFeaturesEnabled.subscribe(() => {
+				currentUrl = globalThis.location.href;
+				navigate(currentUrl);
 			});
 
-			window.addEventListener('beforeunload', () => {
+			// Blur settings are applied as CSS, so re-inject whenever the user changes
+			// any of them instead of requiring a Roblox tab reload.
+			const unsubscribeSettings = settings.subscribe(() => {
+				if (!visualsAreActive()) return;
+				injectBlurStyles();
+			});
+
+			let cleanedUp = false;
+			const cleanup = (): void => {
+				if (cleanedUp) return;
+				cleanedUp = true;
 				logger.debug('Content script cleanup on page unload');
 				removeNavigationListeners();
 				unsubscribeGate();
+				unsubscribeSettings();
 				deactivateVisuals();
+				void pageManager?.deactivate();
 				metricsCollector.stop();
 				themeManager.cleanup();
-			});
+			};
+
+			// pagehide fires on real unloads and bfcache eviction. `beforeunload` can
+			// be cancelled by the page, which would leave a live tab fully torn down.
+			globalThis.addEventListener('pagehide', cleanup, { once: true });
+			ctx.onInvalidated(cleanup);
 
 			logger.info('Rotector content script successfully initialized');
 		} catch (error) {

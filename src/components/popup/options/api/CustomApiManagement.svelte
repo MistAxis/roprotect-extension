@@ -200,6 +200,18 @@
 		openExportDropdown = openExportDropdown === apiId ? null : apiId;
 	}
 
+	// Close the export menu on outside pointer-down or Escape
+	function handleExportDismiss(event: PointerEvent | KeyboardEvent) {
+		if (!openExportDropdown) return;
+		if (event instanceof KeyboardEvent) {
+			if (event.key === 'Escape') openExportDropdown = null;
+			return;
+		}
+		const target = event.target;
+		if (target instanceof Element && target.closest('.export-dropdown-container')) return;
+		openExportDropdown = null;
+	}
+
 	async function handleExportClipboard(api: CustomApiConfig) {
 		try {
 			const exported = exportApi(api.id);
@@ -336,6 +348,8 @@
 		});
 	});
 </script>
+
+<svelte:window onkeydown={handleExportDismiss} onpointerdown={handleExportDismiss} />
 
 <div class="custom-api-management">
 	<header class="custom-api-page-header">

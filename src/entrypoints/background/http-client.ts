@@ -13,6 +13,9 @@ type BearerOverride =
 	| { kind: 'membership' } // use X-Auth-Token (membership key) as Authorization
 	| { kind: 'none' }; // omit Authorization entirely
 
+// JSON responses are held in memory in full, so cap them before parsing.
+const MAX_JSON_RESPONSE_CHARS = 8_000_000;
+
 async function getApiKey(): Promise<string | null> {
 	try {
 		return (await getStorage<string>('sync', SETTINGS_KEYS.API_KEY, '')) || null;
@@ -23,10 +26,12 @@ async function getApiKey(): Promise<string | null> {
 }
 
 function computeRetryDelay(error: ApiError, baseDelay: number, attempt: number): number {
-	if (error.rateLimitReset) {
-		return Math.max(error.rateLimitReset * 1000 - Date.now() + 500, 0);
-	}
-	return baseDelay * attempt;
+	// Server-supplied reset times are untrusted; clamp so a bogus header cannot
+	// stall the caller for hours.
+	const delay = error.rateLimitReset
+		? error.rateLimitReset * 1000 - Date.now() + 500
+		: baseDelay * attempt;
+	return Math.min(Math.max(delay, 0), 60_000);
 }
 
 function isRetryableError(error: ApiError): boolean {
@@ -159,7 +164,9 @@ async function maybeWaitForRateLimit(headers: Headers): Promise<void> {
 	if (remaining === null || reset === null) return;
 	if (Number(remaining) > 0) return;
 
-	const waitMs = Number(reset) * 1000 - Date.now() + 500;
+	// Clamp: an attacker-controlled reset value would otherwise park this
+	// request for years.
+	const waitMs = Math.min(Math.max(Number(reset) * 1000 - Date.now() + 500, 0), 60_000);
 	if (waitMs > 0) {
 		logger.debug(`Rate limit exhausted, waiting ${String(waitMs)}ms for reset`);
 		await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -276,6 +283,9 @@ export async function makeHttpRequest<T = unknown>(
 		const requestOptions: RequestInit = {
 			...fetchOptions,
 			headers,
+			// Don't hand third-party APIs (or anyone a redirect points at) the
+			// extension's origin/id through Referer.
+			referrerPolicy: 'no-referrer',
 			signal: controller.signal
 		};
 
@@ -321,7 +331,19 @@ export async function makeHttpRequest<T = unknown>(
 
 			logger.debug('[http-client] Parsing JSON response');
 			const jsonStartTime = Date.now();
-			const data: unknown = await response.json();
+			// Cap the body before parsing: a hostile provider or a compromised
+			// backend could otherwise stream an unbounded JSON document into the
+			// background worker's heap.
+			const bodyText = await response.text();
+			if (bodyText.length > MAX_JSON_RESPONSE_CHARS) {
+				throw new Error('Response body is too large');
+			}
+			let data: unknown;
+			try {
+				data = JSON.parse(bodyText) as unknown;
+			} catch {
+				throw new Error('Invalid JSON response');
+			}
 			const jsonDuration = Date.now() - jsonStartTime;
 			logger.debug('[http-client] JSON parsed', {
 				jsonDuration,

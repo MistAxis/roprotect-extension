@@ -2,44 +2,56 @@ import * as v from 'valibot';
 
 const ThumbnailStateSchema = v.picklist(['Completed', 'Pending', 'Blocked', 'Error']);
 
+// Roblox responses are still remote input (and can be proxied/mocked), so keep
+// element counts and string lengths bounded before anything reaches storage or
+// the DOM. Limits are generous relative to what the API actually returns.
+const MAX_PAGE_ITEMS = 500;
+const MAX_NAME_LENGTH = 256;
+const MAX_URL_LENGTH = 2048;
+const MAX_CURSOR_LENGTH = 512;
+const MAX_MESH_SOURCE_LENGTH = 5_000_000;
+
 const RobloxOutfitSchema = v.object({
 	id: v.number(),
-	name: v.string(),
+	name: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH)),
 	isEditable: v.boolean(),
-	outfitType: v.string()
+	outfitType: v.pipe(v.string(), v.maxLength(64))
 });
 
 const RobloxOutfitsResponseSchema = v.object({
-	data: v.array(RobloxOutfitSchema),
-	paginationToken: v.nullable(v.string())
+	data: v.pipe(v.array(RobloxOutfitSchema), v.maxLength(MAX_PAGE_ITEMS)),
+	paginationToken: v.nullable(v.pipe(v.string(), v.maxLength(MAX_CURSOR_LENGTH)))
 });
 
 const RobloxThumbnailItemSchema = v.object({
 	targetId: v.number(),
 	state: ThumbnailStateSchema,
-	imageUrl: v.nullable(v.string())
+	imageUrl: v.nullable(v.pipe(v.string(), v.maxLength(MAX_URL_LENGTH)))
 });
 
 const RobloxThumbnailResponseSchema = v.object({
-	data: v.array(RobloxThumbnailItemSchema)
+	data: v.pipe(v.array(RobloxThumbnailItemSchema), v.maxLength(MAX_PAGE_ITEMS))
 });
 
 const RobloxUserBasicSchema = v.object({
 	id: v.number(),
-	name: v.string(),
-	displayName: v.string()
+	name: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH)),
+	displayName: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH))
 });
 
 const RobloxUsersByIdResponseSchema = v.object({
-	data: v.array(RobloxUserBasicSchema)
+	data: v.pipe(v.array(RobloxUserBasicSchema), v.maxLength(MAX_PAGE_ITEMS))
 });
 
 const RobloxAvatarThumbnailResponseSchema = v.object({
-	data: v.array(
-		v.object({
-			state: v.string(),
-			imageUrl: v.nullable(v.string())
-		})
+	data: v.pipe(
+		v.array(
+			v.object({
+				state: v.pipe(v.string(), v.maxLength(64)),
+				imageUrl: v.nullable(v.pipe(v.string(), v.maxLength(MAX_URL_LENGTH)))
+			})
+		),
+		v.maxLength(MAX_PAGE_ITEMS)
 	)
 });
 
@@ -52,8 +64,8 @@ const Vector3Schema = v.object({
 const Roblox3DApiResponseSchema = v.object({
 	targetId: v.number(),
 	state: ThumbnailStateSchema,
-	imageUrl: v.nullable(v.string()),
-	version: v.string()
+	imageUrl: v.nullable(v.pipe(v.string(), v.maxLength(MAX_URL_LENGTH))),
+	version: v.pipe(v.string(), v.maxLength(64))
 });
 
 const Roblox3DMetadataRawSchema = v.object({
@@ -66,65 +78,80 @@ const Roblox3DMetadataRawSchema = v.object({
 		min: Vector3Schema,
 		max: Vector3Schema
 	}),
-	mtl: v.string(),
-	obj: v.string(),
-	textures: v.array(v.string())
+	mtl: v.pipe(v.string(), v.maxLength(MAX_MESH_SOURCE_LENGTH)),
+	obj: v.pipe(v.string(), v.maxLength(MAX_MESH_SOURCE_LENGTH)),
+	textures: v.pipe(v.array(v.pipe(v.string(), v.maxLength(MAX_URL_LENGTH))), v.maxLength(1000))
 });
 
 const RolesApiResponseSchema = v.object({
 	groupId: v.number(),
-	roles: v.array(
-		v.object({
-			id: v.number(),
-			name: v.string(),
-			rank: v.number(),
-			memberCount: v.number()
-		})
+	roles: v.pipe(
+		v.array(
+			v.object({
+				id: v.number(),
+				name: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH)),
+				rank: v.number(),
+				memberCount: v.number()
+			})
+		),
+		v.maxLength(MAX_PAGE_ITEMS)
 	)
 });
 
 const GroupErrorBodySchema = v.object({
-	errors: v.optional(v.array(v.object({ code: v.number() })))
+	errors: v.optional(v.pipe(v.array(v.object({ code: v.number() })), v.maxLength(50)))
 });
 
 const MembersResponseSchema = v.object({
-	data: v.array(
-		v.object({
-			userId: v.number(),
-			username: v.string(),
-			displayName: v.string(),
-			hasVerifiedBadge: v.boolean()
-		})
+	data: v.pipe(
+		v.array(
+			v.object({
+				userId: v.number(),
+				username: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH)),
+				displayName: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH)),
+				hasVerifiedBadge: v.boolean()
+			})
+		),
+		v.maxLength(MAX_PAGE_ITEMS)
 	),
-	previousPageCursor: v.nullable(v.string()),
-	nextPageCursor: v.nullable(v.string())
+	previousPageCursor: v.nullable(v.pipe(v.string(), v.maxLength(MAX_CURSOR_LENGTH))),
+	nextPageCursor: v.nullable(v.pipe(v.string(), v.maxLength(MAX_CURSOR_LENGTH)))
 });
 
 const UserPresencesResponseSchema = v.object({
-	userPresences: v.array(
-		v.object({
-			userPresenceType: v.number(),
-			lastLocation: v.string(),
-			userId: v.number()
-		})
+	userPresences: v.pipe(
+		v.array(
+			v.object({
+				userPresenceType: v.number(),
+				lastLocation: v.pipe(v.string(), v.maxLength(MAX_NAME_LENGTH)),
+				userId: v.number()
+			})
+		),
+		v.maxLength(MAX_PAGE_ITEMS)
 	)
 });
 
 const GroupThumbnailBatchResponseSchema = v.object({
-	data: v.array(
-		v.object({
-			targetId: v.number(),
-			state: v.string(),
-			imageUrl: v.nullable(v.string())
-		})
+	data: v.pipe(
+		v.array(
+			v.object({
+				targetId: v.number(),
+				state: v.pipe(v.string(), v.maxLength(64)),
+				imageUrl: v.nullable(v.pipe(v.string(), v.maxLength(MAX_URL_LENGTH)))
+			})
+		),
+		v.maxLength(MAX_PAGE_ITEMS)
 	)
 });
 
 const UserGroupRolesResponseSchema = v.object({
-	data: v.array(
-		v.object({
-			group: v.object({ id: v.number() })
-		})
+	data: v.pipe(
+		v.array(
+			v.object({
+				group: v.object({ id: v.number() })
+			})
+		),
+		v.maxLength(MAX_PAGE_ITEMS)
 	)
 });
 

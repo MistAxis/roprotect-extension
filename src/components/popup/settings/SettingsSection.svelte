@@ -41,9 +41,24 @@
 
 	let developerExpanded = $state(false);
 	let quarryExpanded = $state(false);
-	let quarryUrl = $state($settings[SETTINGS_KEYS.QUARRY_URL]);
-	let quarryKey = $state($settings[SETTINGS_KEYS.QUARRY_KEY]);
+	let quarryUrl = $state('');
+	let quarryKey = $state('');
 	let togglingApiId = $state<string | null>(null);
+
+	// The section mounts before settings finish loading from sync storage, so seed
+	// the draft when the Quarry section is opened. Re-seeding on every settings
+	// emission would wipe whatever the user is currently typing.
+	let quarrySeeded = false;
+	$effect(() => {
+		if (!quarryExpanded) {
+			quarrySeeded = false;
+			return;
+		}
+		if (quarrySeeded) return;
+		quarryUrl = $settings[SETTINGS_KEYS.QUARRY_URL];
+		quarryKey = $settings[SETTINGS_KEYS.QUARRY_KEY];
+		quarrySeeded = true;
+	});
 
 	const userApis = $derived($customApis.filter((api) => !api.isSystem));
 

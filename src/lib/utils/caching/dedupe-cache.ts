@@ -12,8 +12,20 @@ export class DedupeCache<K, V> {
 	private pending = new Map<K, Promise<V>>();
 	private getTTL: () => number;
 
+	// Browsing many profiles would otherwise grow these maps for the life of the
+	// content script. Evict the oldest insertion once the cap is reached.
+	private static readonly MAX_ENTRIES = 1000;
+
 	constructor(getTTL: () => number) {
 		this.getTTL = getTTL;
+	}
+
+	private evictIfNeeded(): void {
+		while (this.cache.size > DedupeCache.MAX_ENTRIES) {
+			const oldest = this.cache.keys().next().value;
+			if (oldest === undefined) break;
+			this.cache.delete(oldest);
+		}
 	}
 
 	async get(key: K, fetcher: () => Promise<V>): Promise<V> {
@@ -31,6 +43,7 @@ export class DedupeCache<K, V> {
 			// have deleted pending and written a fresher value we shouldn't clobber
 			if (this.pending.get(key) === promise) {
 				this.cache.set(key, { value, timestamp: Date.now() });
+				this.evictIfNeeded();
 			}
 			return value;
 		} finally {
@@ -44,6 +57,7 @@ export class DedupeCache<K, V> {
 	set(key: K, value: V): void {
 		this.cache.set(key, { value, timestamp: Date.now() });
 		this.pending.delete(key);
+		this.evictIfNeeded();
 	}
 
 	invalidate(key: K): void {

@@ -4,6 +4,7 @@ import type { CustomApiConfig } from '@/lib/types/custom-api';
 import { makeHttpRequest } from '../http-client';
 import { CustomApiResponseEnvelopeSchema, parseUserStatusResponse } from '@/lib/schemas/custom-api';
 import { logger } from '@/lib/utils/logging/logger';
+import { asApiError } from '@/lib/utils/api/api-error';
 import { validateEntityId, processBatchEntityIds } from '@/lib/utils/dom/sanitizer';
 
 // Strip the {success, data?, error?} envelope used by custom APIs
@@ -109,17 +110,22 @@ interface WhoamiApiResponse {
 	error?: string;
 }
 
-export async function apiWhoami(
-	apiKey: string
-): Promise<{ success: boolean; data?: WhoamiResponse; error?: string }> {
+// Failures keep the structured HTTP fields so the settings UI can tell an
+// invalid key (401) apart from a rate limit (429) or a network error.
+interface WhoamiResult extends WhoamiApiResponse {
+	status?: number;
+	code?: string;
+	requestId?: string;
+	details?: Record<string, unknown>;
+}
+
+export async function apiWhoami(apiKey: string): Promise<WhoamiResult> {
 	const apiDomain =
 		import.meta.env.USE_DEV_API === 'true' ? 'roprotect-dev.tlet.xyz' : 'roprotect.tlet.xyz';
 	const url = `https://${apiDomain}/v1/whoami`;
 
 	logger.debug('[Background] API whoami called', {
-		apiKeyPrefix: `${apiKey.slice(0, 8)}...`,
 		apiDomain,
-		url,
 		useDevApi: import.meta.env.USE_DEV_API,
 		apiConfigBaseUrl: 'N/A (using direct URL)',
 		apiKeyLength: apiKey.length
@@ -151,33 +157,26 @@ export async function apiWhoami(
 					isObject: typeof payload === 'object' && payload !== null,
 					isArray: Array.isArray(payload),
 					isNull: payload === null,
-					keys: payload && typeof payload === 'object' ? Object.keys(payload) : null,
-					payloadPreview:
-						typeof payload === 'object' && payload !== null
-							? JSON.stringify(payload).slice(0, 500)
-							: String(payload)
+					keys: payload && typeof payload === 'object' ? Object.keys(payload) : null
 				});
 				const parsed = payload as WhoamiApiResponse;
 				if (!parsed.success) {
 					logger.error('[Background] whoami API returned success=false', {
 						error: parsed.error,
-						parsedErrorType: typeof parsed.error,
-						fullParsed: parsed
+						parsedErrorType: typeof parsed.error
 					});
 					throw new Error(parsed.error ?? 'API returned error without message');
 				}
 				if (!parsed.data) {
-					logger.error('[Background] whoami API returned success but missing data', { parsed });
+					logger.error('[Background] whoami API returned success but missing data');
 					throw new Error('API returned success but missing data');
 				}
 				logger.debug('[Background] whoami parsed data', {
 					services: parsed.data.services,
 					label: parsed.data.label,
-					fingerprint: parsed.data.fingerprint,
 					isAdmin: parsed.data.isAdmin,
 					hasEndpoints: !!parsed.data.endpoints,
-					endpointKeys: Object.keys(parsed.data.endpoints),
-					endpoints: parsed.data.endpoints
+					endpointKeys: Object.keys(parsed.data.endpoints)
 				});
 				return parsed.data;
 			}
@@ -196,7 +195,14 @@ export async function apiWhoami(
 			errorCode: caughtError instanceof Error ? undefined : caughtError['code'],
 			errorType: caughtError instanceof Error ? undefined : caughtError['type']
 		});
-		const err = error as Error;
-		return { success: false, error: err.message };
+		const err = asApiError(error);
+		return {
+			success: false,
+			error: err.message,
+			...(err.status !== undefined && { status: err.status }),
+			...(err.code !== undefined && { code: err.code }),
+			...(err.requestId !== undefined && { requestId: err.requestId }),
+			...(err.details !== undefined && { details: err.details })
+		};
 	}
 }

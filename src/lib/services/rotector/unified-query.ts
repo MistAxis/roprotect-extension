@@ -19,6 +19,8 @@ import {
 	isPascRecordPresent,
 	pickHighestSeveritySystemResult
 } from '../../utils/status/status-utils';
+import { sanitizePascUserStatus } from '../../utils/status/pasc-record';
+import { ensurePascClearance, pascViewerLevel } from '../../stores/pasc-clearance';
 import { get } from 'svelte/store';
 
 interface QueryMultipleUsersOptions {
@@ -73,6 +75,14 @@ function shouldBlockLookup(userId: string): boolean {
 	return isRestricted && getLoggedInUserId() !== userId;
 }
 
+// PASC is the one provider whose payload can carry clearance-gated case
+// details. Resolve the viewer's level before handing the result to the UI so a
+// proxy that over-returns cannot leave M1+ details in the client caches.
+async function sanitizePascResult(status: UserStatus): Promise<UserStatus> {
+	await ensurePascClearance();
+	return sanitizePascUserStatus(status, get(pascViewerLevel));
+}
+
 function createRestrictedResult(): CombinedStatus<UserStatus> {
 	const enabledApis = getEnabledCustomApis();
 	return new Map(
@@ -115,6 +125,9 @@ export function queryUserProgressive(
 
 	const enabledApis = getEnabledCustomApis();
 	const controller = new AbortController();
+	// Read through a function: TS narrows a direct `signal.aborted` check and
+	// would treat the post-await re-check as dead code.
+	const isAborted = (): boolean => controller.signal.aborted;
 
 	// Handle case where no APIs are enabled - return a "no APIs" status
 	if (enabledApis.length === 0) {
@@ -168,7 +181,10 @@ export function queryUserProgressive(
 
 			if (controller.signal.aborted) return;
 
-			apiResults.set(api.id, { ...base, data: result });
+			const data = api.id === 'system-pasc' ? await sanitizePascResult(result) : result;
+			if (isAborted()) return;
+
+			apiResults.set(api.id, { ...base, data });
 			onUpdate(new Map(apiResults));
 		} catch (error) {
 			if (controller.signal.aborted) return;
@@ -329,6 +345,11 @@ export async function queryMultipleUsers(
 			}
 			if (toFetch.length === 0) return;
 
+			// Resolve clearance once per scan rather than once per chunk. A failed
+			// lookup falls back to level 0, which strips every gated detail.
+			if (api.id === 'system-pasc') await ensurePascClearance();
+			const pascViewer = get(pascViewerLevel);
+
 			const processChunk = async (chunk: string[]): Promise<void> => {
 				try {
 					const apiStatuses = await apiClient.checkMultipleUsers(chunk, {
@@ -339,7 +360,11 @@ export async function queryMultipleUsers(
 					if (signal?.aborted) return;
 					const userMap = new Map(apiStatuses.map((s) => [s.id.toString(), s]));
 					for (const userId of chunk) {
-						setApiResult(userId, api, resolveBatchEntry(userId, api, userMap.get(userId)));
+						const resolved = resolveBatchEntry(userId, api, userMap.get(userId));
+						if (api.id === 'system-pasc' && resolved.data) {
+							resolved.data = sanitizePascUserStatus(resolved.data, pascViewer);
+						}
+						setApiResult(userId, api, resolved);
 					}
 				} catch (error) {
 					if (signal?.aborted) return;

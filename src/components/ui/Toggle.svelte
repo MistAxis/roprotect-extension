@@ -14,7 +14,13 @@
 		if (!(event.target instanceof HTMLInputElement)) {
 			return;
 		}
-		onchange(event.target.checked);
+		const input = event.target;
+		const next = input.checked;
+		// Keep the native control in sync with the prop. If the parent rejects the
+		// change the prop never updates, which would otherwise leave the hidden
+		// checkbox flipped and make the next click report the wrong value.
+		input.checked = checked;
+		onchange(next);
 	}
 </script>
 

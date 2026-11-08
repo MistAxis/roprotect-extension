@@ -184,9 +184,9 @@
 	}
 
 	// URL changes auto-disable and clear the test result, forcing a retest before re-enable
-	async function handleSave() {
+	async function handleSave(): Promise<boolean> {
 		if (!validateForm()) {
-			return;
+			return false;
 		}
 
 		saving = true;
@@ -237,9 +237,11 @@
 			}
 
 			onClose();
+			return true;
 		} catch (error) {
 			logger.error('Failed to save custom API:', error);
 			showError($_('custom_api_form_error_save_prefix') + asApiError(error).message);
+			return false;
 		} finally {
 			saving = false;
 		}

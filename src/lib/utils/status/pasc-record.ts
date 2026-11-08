@@ -2,6 +2,7 @@ import type { CombinedStatus } from '../../types/custom-api';
 import type { UserStatus } from '../../types/api';
 import {
 	NUMERIC_TO_PASC_FLAG,
+	PASC_ACCESS_RANK,
 	PASC_FLAG_LABELS,
 	type PascAccessLevel,
 	type PascCaseFile,
@@ -49,6 +50,67 @@ function mapFile(entry: string, fallbackLevel: PascAccessLevel, index: number): 
 		sizeLabel: '',
 		fileId
 	};
+}
+
+const DETAIL_REASON_KEYS = ['PASC Finding', 'Internal Review', 'Case Files'] as const;
+
+function fileAccessLevel(entry: string, fallback: PascAccessLevel): PascAccessLevel {
+	return (FILE_LEVEL_SUFFIX.exec(entry)?.[2] as PascAccessLevel | undefined) ?? fallback;
+}
+
+// Defense in depth for data the proxy should already have filtered. The proxy
+// enforces clearance server-side, but if it ever over-returns (or a future
+// proxy change stops filtering), a lower-clearance viewer must not retain case
+// details in memory or in the shared status caches. Keeps the access badge so
+// the tab can still say which clearance is required.
+export function sanitizePascUserStatus(data: UserStatus, viewerLevel: PascAccessLevel): UserStatus {
+	const badges = data.badges ?? [];
+	const access =
+		badges
+			.map((badge) => ACCESS_BADGE.exec(badge.text)?.[1])
+			.find((level): level is PascAccessLevel => level !== undefined) ?? null;
+	const viewerRank = PASC_ACCESS_RANK[viewerLevel];
+	const recordHidden = access !== null && viewerRank < PASC_ACCESS_RANK[access];
+
+	const reasons = { ...data.reasons };
+	let changed = false;
+
+	if (recordHidden) {
+		for (const key of DETAIL_REASON_KEYS) {
+			if (key in reasons) {
+				delete reasons[key];
+				changed = true;
+			}
+		}
+	} else {
+		// Internal review is M1+ regardless of the record's own level.
+		if (viewerRank < PASC_ACCESS_RANK.M1 && 'Internal Review' in reasons) {
+			delete reasons['Internal Review'];
+			changed = true;
+		}
+
+		const caseFiles = reasons['Case Files'];
+		const files = caseFiles?.evidence;
+		if (caseFiles && files) {
+			const fallback = access ?? '0';
+			const visible = files.filter(
+				(entry): entry is string =>
+					typeof entry === 'string' &&
+					PASC_ACCESS_RANK[fileAccessLevel(entry, fallback)] <= viewerRank
+			);
+			if (visible.length !== files.length) {
+				reasons['Case Files'] = { ...caseFiles, evidence: visible };
+				changed = true;
+			}
+		}
+	}
+
+	if (!changed) return data;
+	const sanitized = { ...data, reasons };
+	// Reviewer identity belongs to the case file; do not retain it when all
+	// case details are above the viewer's clearance.
+	if (recordHidden) delete sanitized.reviewer;
+	return sanitized;
 }
 
 export function mapPascUserStatus(

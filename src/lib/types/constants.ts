@@ -210,6 +210,8 @@ export const COMPONENT_CLASSES = {
 	GROUP_STATUS_CONTAINER: 'rotector-group-status-container',
 	EXPORT_BUTTON: 'rotector-export-button',
 	SCAN_HOST: 'rotector-scan-host',
+	FRIENDS_SCAN_HOST: 'rotector-friends-scan-host',
+	FRIENDS_TAG_FILTERS_HOST: 'rotector-friends-tag-filters-host',
 	CIPHER_INDICATOR: 'rotector-cipher-indicator',
 	MEMBERSHIP_BADGE_PILL: 'rotector-membership-badge-pill'
 } as const;

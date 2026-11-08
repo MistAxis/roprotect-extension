@@ -66,6 +66,30 @@ Entrypoints are WXT-discovered; `src/entrypoints/` maps 1:1 to runtime contexts:
 
 **Storage** goes through `src/lib/utils/storage.ts` (`getStorage('sync' | 'local', key, fallback)`, `setStorageMulti`, `subscribeStorageKey` for cross-context reactivity) — not raw `browser.storage`. `sync` for settings, `local` for logs/history. New settings need entries in `SETTINGS_KEYS`, the `Settings` interface, and `SETTINGS_DEFAULTS` (all in `src/lib/types/settings.ts`), and background seeds missing defaults on startup.
 
+## Colors & theming
+
+There is no standalone palette doc: **`src/styles/theme/colors.css` is the source of truth** (imported by `src/styles/index.css`). It has three token layers:
+
+- `--primitive-*` — raw values (grays, blues, status hues, dark surfaces, overlay/shadow opacities). Defined only in that file.
+- `--color-*` — semantic tokens (`bg`, `text`, `border`, `primary`/`accent`, `success`/`warning`/`error`, `status-*`, `tier-*`, form controls, reasons/evidence). This is what components consume.
+- `--roblox-*` — a small palette for UI rendered into Roblox's own DOM (cipher, group-members carousel) so it matches Roblox's page theme instead of the extension's.
+
+Rules:
+
+- **No hardcoded colors in feature CSS/Svelte** — use `var(--color-*)`. If nothing fits, add a semantic token to `colors.css` instead of a one-off hex. White/black and `color-mix()` alpha tints are the only existing exceptions.
+- **Semantic over primitive:** referencing `var(--primitive-*)` outside `colors.css` is a smell. Status colors in TS (`src/lib/utils/status/scan-category.ts`, `src/lib/data/pasc.ts`) are `'var(--color-status-*)'` strings — keep them as tokens; CSS does theme switching, not JS.
+- **Tints use `color-mix(in srgb, var(--color-x) 10%, transparent)`**, not new rgba literals.
+- **Register every new token in the right blocks:** base value in `:root` (light); if it differs in dark, add it to **both** `@media (prefers-color-scheme: dark)` and `[data-theme='dark']` (keep those two identical — drift is a bug), and to `[data-theme='light']` whenever the dark blocks override it, so a manual light theme still wins under a dark OS.
+- **Colors are not Tailwind `@theme` tokens.** `colors.css` uses plain `:root`, so utilities like `bg-primary`/`text-text-subtle` generate nothing — use `var(--color-*)` in CSS or Svelte `style` bindings (or arbitrary values like `bg-[var(--color-bg)]`). Only `radius.css`, `typography.css`, and `shadows.css` define `@theme` tokens.
+- Naming is by convention (stylelint leaves `custom-property-pattern` off): `--primitive-<hue>-<step>` and `--color-<role>[-<variant>]`.
+
+Theme mechanics live in `src/lib/utils/theme.ts`:
+
+- `Theme = 'light' | 'dark' | 'auto'`; the default is `'dark'` (`SETTINGS_DEFAULTS`). `auto` follows Roblox's `body.dark-theme` on Roblox pages, otherwise the content-script theme, otherwise `prefers-color-scheme`.
+- The manager sets `data-theme` on `<html>` and on each registered portal container. New shadow/portal roots must call `themeManager.registerPortalContainer(host)`; never set `data-theme` by hand.
+- Content scripts mirror the resolved theme to `local` storage under `STORAGE_KEYS.CONTENT_THEME` (`rotector-content-theme`) and the popup subscribes to stay aligned. Use `storage.ts` / `subscribeStorageKey`, not raw `browser.storage`.
+- Content CSS rewrites `:root` to `:host`, so tokens must not depend on a page-global `:root` selector.
+
 ## i18n (24 locales, both trees matter)
 
 - `public/locales/<locale>/messages.json` — the real UI catalog consumed by svelte-i18n. Locale codes are hyphenated: `zh-CN`, `zh-TW`. `en` is the base.

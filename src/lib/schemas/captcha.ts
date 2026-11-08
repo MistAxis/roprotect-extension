@@ -2,10 +2,10 @@ import * as v from 'valibot';
 import { CAPTCHA_EXTERNAL_MESSAGES } from '../types/constants';
 
 const CaptchaSessionSchema = v.object({
-	sessionId: v.string(),
-	userId: v.string(),
-	outfitNames: v.array(v.string()),
-	outfitIds: v.optional(v.array(v.number())),
+	sessionId: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+	userId: v.pipe(v.string(), v.minLength(1), v.maxLength(32)),
+	outfitNames: v.pipe(v.array(v.pipe(v.string(), v.maxLength(128))), v.maxLength(100)),
+	outfitIds: v.optional(v.pipe(v.array(v.number()), v.maxLength(100))),
 	inappropriateProfile: v.boolean(),
 	inappropriateFriends: v.boolean(),
 	inappropriateGroups: v.boolean(),
@@ -17,13 +17,13 @@ const CaptchaSessionSchema = v.object({
 const CaptchaExternalMessageSchema = v.variant('type', [
 	v.object({
 		type: v.literal(CAPTCHA_EXTERNAL_MESSAGES.SUCCESS),
-		token: v.string(),
-		session: v.string()
+		token: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
+		session: v.pipe(v.string(), v.minLength(1), v.maxLength(128))
 	}),
 	v.object({
 		type: v.literal(CAPTCHA_EXTERNAL_MESSAGES.ERROR),
-		session: v.optional(v.string()),
-		error: v.optional(v.string())
+		session: v.optional(v.pipe(v.string(), v.maxLength(128))),
+		error: v.optional(v.pipe(v.string(), v.maxLength(2000)))
 	})
 ]);
 

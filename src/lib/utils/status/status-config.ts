@@ -238,6 +238,12 @@ export function getStatusConfig(
 
 	const style = getFlagStyle(activeStatus.flagType, entityType);
 
+	// A SAFE record with a reviewer is a staff-cleared record, not an unchecked user.
+	// Only those reviewed records get the affirmative "Not Flagged" label.
+	if (activeStatus.flagType === STATUS.FLAGS.SAFE && userStatus?.reviewer) {
+		return { ...baseConfig, ...style, textContent: t('tooltip_status_safe') };
+	}
+
 	// PENDING annotates text with confidence percentage
 	if (activeStatus.flagType === STATUS.FLAGS.PENDING) {
 		return {

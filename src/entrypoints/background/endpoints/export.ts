@@ -2,6 +2,10 @@ import type { ExportResult } from '@/lib/types/api';
 import { API_CONFIG } from '@/lib/types/constants';
 import { makeHttpRequest } from '../http-client';
 import { validateEntityId } from '@/lib/utils/dom/sanitizer';
+import { sanitizeFilename } from '@/lib/utils/filename';
+
+// Export files are held in memory before being handed to the popup.
+const MAX_EXPORT_CHARS = 20_000_000;
 
 export async function exportGroupTrackedUsers(
 	groupId: string | number,
@@ -28,6 +32,9 @@ export async function exportGroupTrackedUsers(
 		headers: { Accept: '*/*' },
 		parseResponse: async (response) => {
 			const content = await response.text();
+			if (content.length > MAX_EXPORT_CHARS) {
+				throw new Error('Export is too large');
+			}
 
 			const disposition = response.headers.get('Content-Disposition');
 			if (!disposition) {
@@ -43,7 +50,11 @@ export async function exportGroupTrackedUsers(
 				throw new Error('Response missing Content-Type header');
 			}
 
-			return { content, filename: filenameMatch[1], mimeType };
+			return {
+				content,
+				filename: sanitizeFilename(filenameMatch[1], 'export'),
+				mimeType
+			};
 		}
 	});
 }

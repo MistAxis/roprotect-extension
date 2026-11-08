@@ -52,6 +52,11 @@
 	@apply flex flex-col gap-3;
 }
 
+@utility popup-load-error {
+	@apply m-0 py-4 text-center text-xs;
+	color: var(--color-text-subtle);
+}
+
 @utility rotector-stats-page {
 	@apply flex flex-col;
 }

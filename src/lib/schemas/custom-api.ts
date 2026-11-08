@@ -5,41 +5,44 @@ import type { CustomApiAuthHeaderType } from '../types/custom-api';
 const KNOWN_FLAGS = Object.values(STATUS.FLAGS);
 
 const TaseDetectionTypeSchema = v.object({
-	id: v.nullish(v.string()),
-	name: v.string(),
-	summary: v.nullish(v.string())
+	id: v.nullish(v.pipe(v.string(), v.maxLength(64))),
+	name: v.pipe(v.string(), v.maxLength(128)),
+	summary: v.nullish(v.pipe(v.string(), v.maxLength(1000)))
 });
 
 const TaseGuildDetectionSchema = v.object({
-	category: v.nullish(v.union([v.number(), v.string()])),
+	category: v.nullish(v.union([v.number(), v.pipe(v.string(), v.maxLength(64))])),
 	firstSeenAt: v.nullish(v.number()),
 	flag_type: v.picklist(['unsafe', 'past_offender']),
-	guildId: v.string(),
-	guildName: v.nullish(v.string()),
+	guildId: v.pipe(v.string(), v.maxLength(32)),
+	guildName: v.nullish(v.pipe(v.string(), v.maxLength(128))),
 	lastSeenAt: v.nullish(v.number()),
 	score: v.nullish(v.number()),
-	types: v.nullish(v.array(TaseDetectionTypeSchema)),
-	versions: v.nullish(v.array(v.number()))
+	types: v.nullish(v.pipe(v.array(TaseDetectionTypeSchema), v.maxLength(20))),
+	versions: v.nullish(v.pipe(v.array(v.number()), v.maxLength(20)))
 });
 
 const TaseDiscordAccountSchema = v.object({
-	detectedGuilds: v.array(TaseGuildDetectionSchema)
+	detectedGuilds: v.pipe(v.array(TaseGuildDetectionSchema), v.maxLength(100))
 });
 
 const TaseUserRecordSchema = v.object({
 	badges: v.nullish(
-		v.array(
-			v.object({
-				text: v.string(),
-				color: v.nullish(v.string()),
-				textColor: v.nullish(v.string())
-			})
+		v.pipe(
+			v.array(
+				v.object({
+					text: v.pipe(v.string(), v.maxLength(128)),
+					color: v.nullish(v.pipe(v.string(), v.maxLength(64))),
+					textColor: v.nullish(v.pipe(v.string(), v.maxLength(64)))
+				})
+			),
+			v.maxLength(10)
 		)
 	),
-	category: v.nullish(v.union([v.number(), v.string()])),
+	category: v.nullish(v.union([v.number(), v.pipe(v.string(), v.maxLength(64))])),
 	confidence: v.nullish(v.number()),
-	detections: v.record(v.string(), TaseDiscordAccountSchema),
-	engineVersion: v.nullish(v.string()),
+	detections: v.record(v.pipe(v.string(), v.maxLength(32)), TaseDiscordAccountSchema),
+	engineVersion: v.nullish(v.pipe(v.string(), v.maxLength(64))),
 	firstSeenAt: v.nullish(v.number()),
 	flagType: v.fallback(v.picklist(KNOWN_FLAGS), STATUS.FLAGS.UNKNOWN),
 	id: v.number(),
@@ -50,8 +53,8 @@ const TaseUserRecordSchema = v.object({
 	reasons: v.nullish(v.record(v.string(), v.unknown())),
 	reviewer: v.nullish(
 		v.object({
-			username: v.string(),
-			displayName: v.string()
+			username: v.pipe(v.string(), v.maxLength(128)),
+			displayName: v.pipe(v.string(), v.maxLength(128))
 		})
 	),
 	versionCompatibility: v.nullish(v.picklist(['current', 'compatible', 'outdated', 'unknown']))
@@ -62,16 +65,16 @@ const TaseUserRecordSchema = v.object({
 // when Discord has no cached profile for that id. A single missing key must not
 // fail the whole map, otherwise every account in the tooltip loses its avatar.
 const DiscordAvatarSchema = v.object({
-	avatarHash: v.nullish(v.string()),
-	avatarUrl: v.nullish(v.string()),
+	avatarHash: v.nullish(v.pipe(v.string(), v.maxLength(128))),
+	avatarUrl: v.nullish(v.pipe(v.string(), v.maxLength(2048))),
 	isAnimated: v.nullish(v.boolean()),
-	userId: v.nullish(v.string()),
-	username: v.nullish(v.string()),
-	globalName: v.nullish(v.string()),
-	displayName: v.nullish(v.string()),
+	userId: v.nullish(v.pipe(v.string(), v.maxLength(32))),
+	username: v.nullish(v.pipe(v.string(), v.maxLength(128))),
+	globalName: v.nullish(v.pipe(v.string(), v.maxLength(128))),
+	displayName: v.nullish(v.pipe(v.string(), v.maxLength(128))),
 	// Not part of the API payload: filled in by the background so the tooltip can
 	// render the avatar despite roblox.com's CSP blocking cdn.discordapp.com.
-	avatarDataUrl: v.optional(v.nullish(v.string()))
+	avatarDataUrl: v.optional(v.nullish(v.pipe(v.string(), v.maxLength(1_000_000))))
 });
 
 const AUTH_HEADER_TYPES: readonly CustomApiAuthHeaderType[] = [
@@ -83,11 +86,18 @@ const AUTH_HEADER_TYPES: readonly CustomApiAuthHeaderType[] = [
 const REASON_FORMATS = ['numeric', 'string'] as const;
 
 const CustomApiBadgeSchema = v.object({
-	text: v.string('Badge: text must be string'),
+	text: v.pipe(v.string('Badge: text must be string'), v.maxLength(128)),
 	// Some providers (RAB, TASE) omit color/textColor on badges. Use nullish
 	// to accept missing keys AND explicit null without failing.
-	color: v.nullish(v.string('Badge: color must be string')),
-	textColor: v.nullish(v.string('Badge: textColor must be string'))
+	color: v.nullish(v.pipe(v.string('Badge: color must be string'), v.maxLength(64))),
+	textColor: v.nullish(v.pipe(v.string('Badge: textColor must be string'), v.maxLength(64)))
+});
+
+const MembershipBadgeSchema = v.object({
+	tier: v.picklist([1, 2, 3]),
+	badgeDesign: v.number(),
+	iconDesign: v.number(),
+	textDesign: v.number()
 });
 
 const UserStatusResponseSchema = v.object({
@@ -101,7 +111,7 @@ const UserStatusResponseSchema = v.object({
 	),
 	// Some providers send category as string; coerce to number. Optional in both schemas.
 	category: v.optional(v.pipe(v.union([v.number(), v.string()]), v.transform(Number))),
-	confidence: v.optional(v.number('Invalid "confidence" field (must be number if present)')),
+	confidence: v.optional(v.number('Invalid "confidence" field (must be number if present)'), 0),
 	// A record with no reasons omits the key entirely, and the contract also permits an
 	// explicit null, so normalise both to an empty object. The `optional` default covers
 	// the absent case, the transform covers an explicit null, and doing it at the parse
@@ -117,14 +127,24 @@ const UserStatusResponseSchema = v.object({
 		)
 	),
 	// TASE V2 specific fields
-	detections: v.optional(v.record(v.string(), TaseDiscordAccountSchema)),
+	detections: v.optional(v.record(v.pipe(v.string(), v.maxLength(32)), TaseDiscordAccountSchema)),
 	firstSeenAt: v.nullish(v.number()),
 	lastSeenAt: v.nullish(v.number()),
 	lastUpdated: v.nullish(v.number()),
-	engineVersion: v.nullish(v.string()),
+	engineVersion: v.nullish(v.pipe(v.string(), v.maxLength(64))),
 	isLocked: v.nullish(v.boolean()),
 	isReportable: v.nullish(v.boolean()),
 	versionCompatibility: v.nullish(v.picklist(['current', 'compatible', 'outdated', 'unknown'])),
+	// Queue lifecycle + PASC record-presence markers. These are part of the same
+	// status contract as the core schema; dropping them here made processed
+	// users look permanently queued and hid PASC records from the authoritative
+	// verdict logic.
+	queuedAt: v.optional(v.number()),
+	processed: v.optional(v.boolean()),
+	processedAt: v.optional(v.number()),
+	pascRecordPresent: v.optional(v.boolean()),
+	pascMissing: v.optional(v.boolean()),
+	membershipBadge: v.optional(MembershipBadgeSchema),
 	reviewer: v.nullish(
 		v.object({
 			username: v.string(),
@@ -135,8 +155,14 @@ const UserStatusResponseSchema = v.object({
 
 export const CustomApiResponseEnvelopeSchema = v.variant('success', [
 	v.object({ success: v.literal(true), data: v.unknown() }),
-	v.object({ success: v.literal(false), error: v.optional(v.string()) })
+	v.object({
+		success: v.literal(false),
+		error: v.optional(v.pipe(v.string(), v.maxLength(2000)))
+	})
 ]);
+
+const MAX_URL_LENGTH = 2048;
+const MAX_DATA_URL_LENGTH = 512_000;
 
 const ImportedApiConfigSchema = v.object({
 	name: v.pipe(
@@ -147,11 +173,13 @@ const ImportedApiConfigSchema = v.object({
 	singleUrl: v.pipe(
 		v.string('Missing or invalid "singleUrl" field'),
 		v.startsWith('https://', 'Single URL must use HTTPS protocol'),
-		v.includes('{userId}', 'Single URL must contain {userId} placeholder')
+		v.includes('{userId}', 'Single URL must contain {userId} placeholder'),
+		v.maxLength(MAX_URL_LENGTH, `Single URL must be at most ${String(MAX_URL_LENGTH)} characters`)
 	),
 	batchUrl: v.pipe(
 		v.string('Missing or invalid "batchUrl" field'),
-		v.startsWith('https://', 'Batch URL must use HTTPS protocol')
+		v.startsWith('https://', 'Batch URL must use HTTPS protocol'),
+		v.maxLength(MAX_URL_LENGTH, `Batch URL must be at most ${String(MAX_URL_LENGTH)} characters`)
 	),
 	enabled: v.boolean('Missing or invalid "enabled" field'),
 	timeout: v.pipe(
@@ -168,7 +196,8 @@ const ImportedApiConfigSchema = v.object({
 			v.regex(
 				/^(data:image\/|chrome-extension:\/\/|moz-extension:\/\/)/,
 				'landscapeImageDataUrl must be a data:image/, chrome-extension://, or moz-extension:// URL'
-			)
+			),
+			v.maxLength(MAX_DATA_URL_LENGTH)
 		)
 	),
 	authHeaderType: v.optional(
@@ -179,13 +208,22 @@ const ImportedApiConfigSchema = v.object({
 	)
 });
 
+// This schema also gates `apiConfig` arriving inside a content-script message,
+// so every field a page script could control is capped. The URL rules are the
+// same ones the import path enforces: HTTPS only, and the single-user URL has
+// to carry the placeholder the client substitutes.
 export const PersistedCustomApiSchema = v.object({
-	id: v.string(),
-	name: v.string(),
-	singleUrl: v.string(),
-	batchUrl: v.string(),
+	id: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+	name: v.pipe(v.string(), v.maxLength(64)),
+	singleUrl: v.pipe(
+		v.string(),
+		v.startsWith('https://'),
+		v.includes('{userId}'),
+		v.maxLength(MAX_URL_LENGTH)
+	),
+	batchUrl: v.pipe(v.string(), v.startsWith('https://'), v.maxLength(MAX_URL_LENGTH)),
 	enabled: v.boolean(),
-	timeout: v.number(),
+	timeout: v.pipe(v.number(), v.minValue(1000), v.maxValue(60_000)),
 	order: v.number(),
 	createdAt: v.number(),
 	lastTested: v.optional(v.number()),
@@ -198,10 +236,11 @@ export const PersistedCustomApiSchema = v.object({
 			v.regex(
 				/^(data:image\/|chrome-extension:\/\/|moz-extension:\/\/)/,
 				'landscapeImageDataUrl must be a data:image/, chrome-extension://, or moz-extension:// URL'
-			)
+			),
+			v.maxLength(MAX_DATA_URL_LENGTH)
 		)
 	),
-	apiKey: v.optional(v.string()),
+	apiKey: v.optional(v.pipe(v.string(), v.maxLength(512))),
 	authHeaderType: v.optional(v.picklist(AUTH_HEADER_TYPES))
 });
 
@@ -214,7 +253,6 @@ export type DiscordAvatar = v.InferOutput<typeof DiscordAvatarSchema>;
 
 export const parseUserStatusResponse = v.parser(UserStatusResponseSchema);
 export const parseImportedApiConfig = v.parser(ImportedApiConfigSchema);
-export const parsePersistedCustomApis = v.parser(v.array(PersistedCustomApiSchema));
 export const parseTaseUserRecord = v.parser(TaseUserRecordSchema);
 export const parseDiscordAvatar = v.parser(DiscordAvatarSchema);
 export const parseDiscordAvatarMap = v.parser(v.record(v.string(), DiscordAvatarSchema));

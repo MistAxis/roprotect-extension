@@ -29,6 +29,10 @@ export function getErrorDetailCode(value: unknown): string | undefined {
 	return typeof code === 'string' ? code : undefined;
 }
 
+// Error bodies are still remote input; cap before parsing/paraphrasing.
+const MAX_ERROR_BODY_CHARS = 64_000;
+const MAX_ERROR_MESSAGE_CHARS = 2000;
+
 // HTTP Response -> ApiError. Reads JSON body for structured error fields and
 // sets rateLimitReset from the Retry-After header for 429 responses.
 export async function buildHttpError(response: Response): Promise<ApiError> {
@@ -40,15 +44,23 @@ export async function buildHttpError(response: Response): Promise<ApiError> {
 		details?: Record<string, unknown>;
 	};
 	try {
-		const jsonData: unknown = await response.json();
+		const bodyText = await response.text();
+		const clipped =
+			bodyText.length > MAX_ERROR_BODY_CHARS ? bodyText.slice(0, MAX_ERROR_BODY_CHARS) : bodyText;
+		const jsonData: unknown = JSON.parse(clipped) as unknown;
 		errorData = typeof jsonData === 'object' && jsonData !== null ? jsonData : {};
 	} catch {
-		const errorText = await response.text().catch(() => 'Unknown error');
-		errorData = { error: errorText };
+		errorData = { error: 'Unknown error' };
 	}
 
+	const message = errorData.error ?? `HTTP ${String(response.status)}: ${response.statusText}`;
+
 	const error: ApiError = Object.assign(
-		new Error(errorData.error ?? `HTTP ${String(response.status)}: ${response.statusText}`),
+		new Error(
+			message.length > MAX_ERROR_MESSAGE_CHARS
+				? `${message.slice(0, MAX_ERROR_MESSAGE_CHARS)}...`
+				: message
+		),
 		{
 			status: response.status,
 			...(errorData.requestId && { requestId: errorData.requestId }),

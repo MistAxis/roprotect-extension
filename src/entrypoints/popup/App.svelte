@@ -5,9 +5,10 @@
 	import CustomApiManagement from '@/components/popup/options/api/CustomApiManagement.svelte';
 	import MembershipPage from '@/components/popup/options/membership/MembershipPage.svelte';
 	import FooterSection from '@/components/popup/FooterSection.svelte';
-	import LegalPausedBanner from '@/components/popup/LegalPausedBanner.svelte';
+	import ApiKeyEntryModal from '@/components/legal/ApiKeyEntryModal.svelte';
 	import LoadingSpinner from '@/components/ui/LoadingSpinner.svelte';
 	import Toast from '@/components/ui/Toast.svelte';
+	import { shouldShowApiKeyModal } from '@/lib/stores/legal';
 	import { loadStoredLanguagePreference } from '@/lib/stores/i18n';
 	import { loadQueueHistory } from '@/lib/stores/queue-history';
 	import { loadDeveloperLogs } from '@/lib/stores/developer-logs';
@@ -60,9 +61,19 @@
 	$effect(() => {
 		if (!isOptionsSurface || currentPage !== null) return;
 		void (async () => {
-			const target = await getStorage<string | undefined>('local', 'optionsDeepLink', undefined);
-			await removeStorage('local', 'optionsDeepLink');
-			currentPage = resolveOptionsDeepLink(target);
+			try {
+				const target = await getStorage<string | undefined>('local', 'optionsDeepLink', undefined);
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- navigation may have set the page while the read was pending
+				if (currentPage !== null) return;
+				currentPage = resolveOptionsDeepLink(target);
+			} catch (error) {
+				logger.error('Failed to resolve options deep link:', error);
+				currentPage = resolveOptionsDeepLink(undefined);
+			} finally {
+				await removeStorage('local', 'optionsDeepLink').catch((error: unknown) => {
+					logger.warn('Failed to clear options deep link:', error);
+				});
+			}
 		})();
 	});
 
@@ -109,6 +120,8 @@
 
 		getStorage<Page | undefined>('local', LAST_PAGE_STORAGE_KEY, undefined)
 			.then((savedPage) => {
+				// A fast click on a tab must win over the async restore.
+				if (currentPage !== null) return;
 				currentPage =
 					savedPage && POPUP_PAGES.has(savedPage) && (IS_DEV || savedPage !== 'performance')
 						? savedPage
@@ -116,7 +129,7 @@
 			})
 			.catch((error: unknown) => {
 				logger.error('Failed to load last visited page:', error);
-				currentPage = 'stats';
+				currentPage ??= 'stats';
 			});
 	});
 
@@ -145,12 +158,20 @@
 	<!-- Toast Notifications -->
 	<Toast />
 
+	<!-- First-run: surface the API key prompt where the user actually looks -->
+	{#if $shouldShowApiKeyModal}
+		<ApiKeyEntryModal
+			onClose={() => logger.debug('API key modal closed from popup')}
+			onSuccess={() => logger.debug('API key validated from popup')}
+		/>
+	{/if}
+
 	{#if isPopupSurface}
 		<!-- Header Section -->
 		<div class="pb-2 text-center">
 			<div class="mb-2 flex justify-center">
 				<img
-					class="object-contin h-20 inline-auto max-inline-[260px]"
+					class="h-20 object-contain inline-auto max-inline-[260px]"
 					alt="RoProtect"
 					src={logoSrc}
 				/>
@@ -164,8 +185,6 @@
 				{$_('popup_header_description')}
 			</p>
 		</div>
-
-		<LegalPausedBanner />
 
 		<!-- Navigation -->
 		<Navbar {currentPage} onPageChange={handlePageChange} />
@@ -209,6 +228,8 @@
 				{:then mod}
 					{@const Component = mod.default}
 					<Component />
+				{:catch}
+					<p class="popup-load-error">{$_('api_key_modal_error_unknown')}</p>
 				{/await}
 			{:else if currentPage === 'membership'}
 				<MembershipPage />
@@ -218,8 +239,14 @@
 				{:then mod}
 					{@const Component = mod.default}
 					<Component onBack={() => handlePageChange('settings')} />
+				{:catch}
+					<p class="popup-load-error">{$_('api_key_modal_error_unknown')}</p>
 				{/await}
 			{/if}
+		{:else}
+			<div class="flex items-center justify-center py-6">
+				<LoadingSpinner size="medium" />
+			</div>
 		{/if}
 	</div>
 

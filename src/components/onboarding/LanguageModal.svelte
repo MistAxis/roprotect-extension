@@ -17,7 +17,6 @@
 
 	let isOpen = $state(true);
 	const availableLocales = getAvailableLocales();
-	let translateEnabled = $state($settings[SETTINGS_KEYS.TRANSLATE_VIOLATIONS_ENABLED]);
 
 	async function handleLanguageChange(value: string) {
 		await setLanguage(value);
@@ -28,11 +27,9 @@
 		if (checked) {
 			const hasPermission = await hasTranslatePermission();
 			if (!hasPermission && !(await requestTranslatePermission())) {
-				translateEnabled = false;
 				return;
 			}
 		}
-		translateEnabled = checked;
 		await updateSetting(SETTINGS_KEYS.TRANSLATE_VIOLATIONS_ENABLED, checked);
 	}
 </script>
@@ -75,7 +72,10 @@
 			<p class="onboarding-translate-description">
 				{$_('onboarding_translate_description')}
 			</p>
-			<Toggle checked={translateEnabled} onchange={handleTranslateChange} />
+			<Toggle
+				checked={$settings[SETTINGS_KEYS.TRANSLATE_VIOLATIONS_ENABLED]}
+				onchange={handleTranslateChange}
+			/>
 		</div>
 	</div>
 </Modal>

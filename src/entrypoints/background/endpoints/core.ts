@@ -253,7 +253,11 @@ const DISCORD_CDN = 'https://cdn.discordapp.com/avatars';
 function resolveAvatarUrl(discordId: string, avatar: DiscordAvatar): string | null {
 	if (avatar.avatarUrl) return avatar.avatarUrl;
 	if (!avatar.avatarHash) return null;
-	return `${DISCORD_CDN}/${discordId}/${avatar.avatarHash}.${avatar.isAnimated ? 'gif' : 'png'}`;
+	// Both values come from the response; encode them so they cannot change the
+	// CDN path (or add a query) when interpolated.
+	const safeId = encodeURIComponent(discordId);
+	const safeHash = encodeURIComponent(avatar.avatarHash);
+	return `${DISCORD_CDN}/${safeId}/${safeHash}.${avatar.isAnimated ? 'gif' : 'png'}`;
 }
 
 // The tooltip is injected into roblox.com, whose page CSP omits

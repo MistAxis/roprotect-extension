@@ -134,11 +134,16 @@ async function fetchTranslation(
 	}, API_CONFIG.TIMEOUT);
 
 	try {
-		const response = await fetch(url, { signal: controller.signal });
+		const response = await fetch(url, { signal: controller.signal, referrerPolicy: 'no-referrer' });
 		if (!response.ok) {
 			throw new Error(`Translation API returned status ${String(response.status)}`);
 		}
-		return extractTranslatedText(await response.json());
+		// Bound the body: translation output is small, but the endpoint is remote.
+		const bodyText = await response.text();
+		if (bodyText.length > 1_000_000) {
+			throw new Error('Translation response is too large');
+		}
+		return extractTranslatedText(JSON.parse(bodyText) as unknown);
 	} finally {
 		clearTimeout(timeoutId);
 	}

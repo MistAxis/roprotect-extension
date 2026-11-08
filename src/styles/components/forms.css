@@ -40,3 +40,9 @@
 		color: var(--color-text-subtle);
 	}
 }
+
+/* The native checkbox is visually hidden, so show focus on the track instead. */
+.toggle-container input:focus-visible + .toggle-switch {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}

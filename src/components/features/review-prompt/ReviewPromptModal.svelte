@@ -31,8 +31,12 @@
 	] as const;
 
 	async function handleReview(): Promise<void> {
-		window.open(CHROME_STORE_REVIEW_URL, '_blank', 'noopener,noreferrer');
-		window.open(FIREFOX_STORE_REVIEW_URL, '_blank', 'noopener,noreferrer');
+		const isFirefox = navigator.userAgent.includes('Firefox');
+		window.open(
+			isFirefox ? FIREFOX_STORE_REVIEW_URL : CHROME_STORE_REVIEW_URL,
+			'_blank',
+			'noopener,noreferrer'
+		);
 		try {
 			await markReviewPromptCompleted();
 		} catch (error) {

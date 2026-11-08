@@ -47,10 +47,10 @@
 		}
 	}
 
-	async function handleImport() {
+	async function handleImport(): Promise<boolean> {
 		if (!encodedData.trim()) {
 			showError($_('custom_api_import_error_empty_data'));
-			return;
+			return false;
 		}
 
 		importing = true;
@@ -69,10 +69,12 @@
 
 			onSuccess(newApi.name, wasRenamed, wasRenamed ? originalName : undefined);
 			onClose();
+			return true;
 		} catch (error) {
 			logger.error('Failed to import custom API:', error);
 			const errorMessage = asApiError(error).message;
 			showError($_('custom_api_mgmt_alert_import_failed', { values: { 0: errorMessage } }));
+			return false;
 		} finally {
 			importing = false;
 		}

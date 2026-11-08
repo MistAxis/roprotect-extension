@@ -15,11 +15,30 @@ export function getLogSource(): LogSource {
 }
 
 // Returns a structured-clone-safe copy of value so log entries survive browser.storage.local.set on Firefox
+// Stored logs are user-exportable, so URLs lose their query/fragment (which
+// carry search terms, ids and session tokens) and values under credential-ish
+// keys never leave the extension.
+const SENSITIVE_KEY_PATTERN =
+	/api[-_]?key|token|passw|secret|authorization|cookie|session|captcha|fingerprint|installation/i;
+
+const ABSOLUTE_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+export function redactUrlForLog(value: string): string {
+	if (!ABSOLUTE_URL_PATTERN.test(value)) return value;
+	try {
+		const url = new URL(value);
+		return `${url.origin}${url.pathname}`;
+	} catch {
+		return '[invalid URL]';
+	}
+}
+
 function normalizeForClone(value: unknown, seen: WeakSet<object>): unknown {
 	if (value === null || value === undefined) return value;
 	if (typeof value === 'function') return '[Function]';
 	if (typeof value === 'symbol') return value.toString();
 	if (typeof value === 'bigint') return value.toString();
+	if (typeof value === 'string') return redactUrlForLog(value);
 	if (typeof value !== 'object') return value;
 
 	if (seen.has(value)) return '[Circular]';
@@ -46,9 +65,18 @@ function normalizeForClone(value: unknown, seen: WeakSet<object>): unknown {
 
 	const out: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(value)) {
-		out[k] = normalizeForClone(v, seen);
+		out[k] =
+			SENSITIVE_KEY_PATTERN.test(k) && v !== null && v !== undefined
+				? '[redacted]'
+				: normalizeForClone(v, seen);
 	}
 	return out;
+}
+
+// Same redaction pass used at write time, exposed for code that formats stored
+// entries (older entries may predate the write-time redaction).
+export function sanitizeLogValue(value: unknown): unknown {
+	return normalizeForClone(value, new WeakSet());
 }
 
 // Stringifies and truncates an arbitrary log payload, returning a clone-safe value for storage IPC

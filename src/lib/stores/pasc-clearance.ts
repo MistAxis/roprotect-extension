@@ -14,6 +14,25 @@ interface PascClearanceState {
 const clearanceState = writable<PascClearanceState>({ level: null, loading: false });
 
 let inflight: Promise<PascAccessLevel | null> | null = null;
+// Invalidates an in-flight lookup when the API key changes, so a result for the
+// previous viewer can never grant clearance to the new one.
+let generation = 0;
+let lastFailedAt = 0;
+
+// A failed lookup is retried lazily, but not on every tooltip: without this a
+// level-0 viewer would re-request clearance for every hover while the proxy is
+// down or refuses the route.
+const CLEARANCE_RETRY_MS = 30_000;
+
+// Drops the cached clearance. Call whenever the API key changes: PASC access is
+// resolved from that key, so the previous viewer's level must not survive a
+// sign-out or account switch in the same tab.
+export function resetPascClearance(): void {
+	generation += 1;
+	inflight = null;
+	lastFailedAt = 0;
+	clearanceState.set({ level: null, loading: false });
+}
 
 export function ensurePascClearance(): Promise<PascAccessLevel | null> {
 	const current = get(clearanceState);
@@ -21,20 +40,28 @@ export function ensurePascClearance(): Promise<PascAccessLevel | null> {
 		if (current.loading && inflight) return inflight;
 		return Promise.resolve(current.level);
 	}
+	if (Date.now() - lastFailedAt < CLEARANCE_RETRY_MS) {
+		return Promise.resolve(null);
+	}
+
+	const requestGeneration = generation;
 	clearanceState.set({ level: null, loading: true });
 	inflight = apiClient
 		.getPascClearance()
 		.then((level) => {
+			if (requestGeneration !== generation) return null;
 			clearanceState.set({ level, loading: false });
 			return level;
 		})
 		.catch((error: unknown) => {
+			if (requestGeneration !== generation) return null;
 			logger.warn('[PASC] Clearance lookup failed; edit stays hidden:', error);
+			lastFailedAt = Date.now();
 			clearanceState.set({ level: null, loading: false });
 			return null;
 		})
 		.finally(() => {
-			inflight = null;
+			if (requestGeneration === generation) inflight = null;
 		});
 	return inflight;
 }

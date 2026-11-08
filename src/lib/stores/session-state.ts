@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { logger } from '@/lib/utils/logging/logger';
-import { getStorage, setStorage, subscribeStorageKey } from '@/lib/utils/storage';
+import { getStorage, removeStorage, setStorage, subscribeStorageKey } from '@/lib/utils/storage';
 
 const SESSION_CACHE_KEY = '_session_cache';
 
@@ -31,6 +31,13 @@ export async function markSessionRestricted(): Promise<void> {
 export async function readSessionRestricted(): Promise<SessionRestrictedState> {
 	const stored = await getStorage<unknown>('local', SESSION_CACHE_KEY, undefined);
 	return parseSessionState(stored);
+}
+
+// Clears a recorded restriction so the user can re-check access. The API will
+// re-mark it on the next denied request if the restriction is still active.
+export async function clearSessionRestricted(): Promise<void> {
+	await removeStorage('local', SESSION_CACHE_KEY);
+	logger.info('Session restriction cleared');
 }
 
 export function subscribeSessionRestricted(

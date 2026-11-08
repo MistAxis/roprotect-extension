@@ -3,6 +3,7 @@ import { settings, updateSetting } from './settings';
 import { SETTINGS_KEYS } from '../types/settings';
 import { logger } from '../utils/logging/logger';
 import {
+	clearSessionRestricted,
 	readSessionRestricted,
 	type SessionRestrictedState,
 	subscribeSessionRestricted
@@ -30,6 +31,17 @@ export async function initializeRestrictedAccess(): Promise<void> {
 	} catch (error) {
 		logger.error('Failed to load access state:', error);
 		restrictedAccessStore.set({ ...initialState, isLoading: false });
+	}
+}
+
+// Clears the stored restriction so the next lookup re-checks access with the API.
+// Used when the API key changes and by the "check again" action on the notice.
+export async function resetRestrictedAccess(): Promise<void> {
+	try {
+		await clearSessionRestricted();
+		restrictedAccessStore.set({ isRestricted: false, timestamp: null, isLoading: false });
+	} catch (error) {
+		logger.error('Failed to clear access state:', error);
 	}
 }
 

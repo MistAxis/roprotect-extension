@@ -6,6 +6,11 @@ export type QuarryLookupResult = Record<string, string[] | null>;
 
 const QUARRY_PATH = '/api/v1/lookup';
 const QUARRY_TIMEOUT_MS = 10_000;
+// Third-party response data: bound the body, entry count, and string lengths.
+const MAX_QUARRY_BODY_CHARS = 2_000_000;
+const MAX_QUARRY_ENTRIES = 500;
+const MAX_QUARRY_SERVERS = 50;
+const MAX_QUARRY_SERVER_NAME = 200;
 
 async function readConfig(): Promise<{ origin: string; key: string } | null> {
 	const [rawUrl, rawKey] = await Promise.all([
@@ -40,7 +45,12 @@ export async function lookupQuarry(ids: string[]): Promise<QuarryLookupResult> {
 			logger.warn('[quarry] lookup rejected', { status: response.status });
 			return {};
 		}
-		const body: unknown = await response.json();
+		const bodyText = await response.text();
+		if (bodyText.length > MAX_QUARRY_BODY_CHARS) {
+			logger.warn('[quarry] response too large');
+			return {};
+		}
+		const body: unknown = JSON.parse(bodyText) as unknown;
 		const results =
 			typeof body === 'object' && body !== null
 				? (body as { results?: unknown }).results
@@ -48,9 +58,14 @@ export async function lookupQuarry(ids: string[]): Promise<QuarryLookupResult> {
 		if (typeof results !== 'object' || results === null) return {};
 
 		const parsed: QuarryLookupResult = {};
+		let count = 0;
 		for (const [id, servers] of Object.entries(results)) {
+			if (count >= MAX_QUARRY_ENTRIES) break;
+			count++;
 			parsed[id] =
-				Array.isArray(servers) && servers.every((name) => typeof name === 'string')
+				Array.isArray(servers) &&
+				servers.length <= MAX_QUARRY_SERVERS &&
+				servers.every((name) => typeof name === 'string' && name.length <= MAX_QUARRY_SERVER_NAME)
 					? servers
 					: null;
 		}

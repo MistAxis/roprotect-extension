@@ -221,6 +221,7 @@
 			}, 1500);
 		} catch (error) {
 			logger.error('Failed to copy verification phrase:', error);
+			showError($_('tooltip_discord_copy_failed'));
 		}
 	}
 
@@ -346,6 +347,12 @@
 				class="membership-key-input"
 				aria-label={$_('membership_api_key_title')}
 				autocomplete="off"
+				onkeydown={(event) => {
+					if (event.key === 'Enter' && keyDirty && !savingKey) {
+						event.preventDefault();
+						void handleSaveKey();
+					}
+				}}
 				placeholder={$_('membership_api_key_placeholder')}
 				spellcheck="false"
 				type={apiKeyVisible ? 'text' : 'password'}
@@ -381,6 +388,14 @@
 				{:else if membershipState.kind === 'invalid-key'}
 					<CircleAlert class="membership-status-icon-error" size={14} />
 					<span>{$_('membership_status_invalid_key')}</span>
+				{:else if membershipState.kind === 'unknown'}
+					<CircleAlert class="membership-status-icon-warn" size={14} />
+					<span>{$_('membership_status_unknown')}</span>
+					<button
+						class="membership-inline-link"
+						onclick={() => void loadMembershipStatus(true)}
+						type="button">{$_('usage_retry')}</button
+					>
 				{/if}
 			</div>
 		{/if}

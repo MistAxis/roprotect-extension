@@ -11,7 +11,7 @@
    ================================= */
 
 @utility footer-link-row {
-	@apply flex items-center justify-center gap-1;
+	@apply flex items-center justify-center gap-3;
 }
 
 @utility footer-link-dot {
@@ -20,21 +20,39 @@
 }
 
 @utility footer-link {
-	@apply inline-flex cursor-pointer items-center gap-1 rounded-sm border-none bg-transparent px-1.5 py-0.5 no-underline;
+	@apply relative inline-flex cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-1 no-underline;
 	color: var(--color-text-subtle);
 	font-size: inherit;
 	transition:
 		color 0.15s ease,
 		background-color 0.15s ease;
 
-	&:hover {
+	&:hover,
+	&:focus-visible {
 		color: var(--color-primary);
 		background-color: var(--color-hover);
+	}
+
+	&:hover .footer-link-tooltip,
+	&:focus-visible .footer-link-tooltip {
+		opacity: 1;
+		transform: translate(-50%, 0);
 	}
 }
 
 @utility footer-link-icon {
-	@apply h-3.5 w-3.5 shrink-0;
+	@apply shrink-0 block-[17px] inline-[17px];
+}
+
+@utility footer-link-tooltip {
+	@apply pointer-events-none absolute inset-s-1/2 inset-be-full mb-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap;
+	background-color: var(--color-bg-tertiary);
+	color: var(--color-text-secondary);
+	opacity: 0;
+	transform: translate(-50%, 3px);
+	transition:
+		opacity 0.14s ease,
+		transform 0.14s ease;
 }
 
 /* =================================

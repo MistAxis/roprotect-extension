@@ -5,11 +5,32 @@
 	const icons = { success: CircleCheckBig, error: CircleX, warning: TriangleAlert, info: Info };
 
 	let isExiting = $state(false);
+	let exitTimer: ReturnType<typeof setTimeout> | null = null;
+	const toastKey = $derived($toast ? `${$toast.type}:${$toast.message}` : null);
+
+	// A new toast must cancel any in-flight exit so it does not inherit the fade
+	// or get dismissed by the previous toast's timer.
+	$effect(() => {
+		void toastKey;
+		isExiting = false;
+		if (exitTimer) {
+			clearTimeout(exitTimer);
+			exitTimer = null;
+		}
+		return () => {
+			if (exitTimer) {
+				clearTimeout(exitTimer);
+				exitTimer = null;
+			}
+		};
+	});
 
 	function handleDismiss(): void {
+		const dismissedKey = toastKey;
 		isExiting = true;
-		setTimeout(() => {
-			dismissToast();
+		exitTimer = setTimeout(() => {
+			exitTimer = null;
+			if (toastKey === dismissedKey) dismissToast();
 			isExiting = false;
 		}, 200);
 	}

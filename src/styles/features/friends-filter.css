@@ -1,0 +1,90 @@
+/* =================================
+   FRIENDS PAGE TAG FILTERS
+   ================================= */
+
+/* Both wrappers are display:contents so the chips become direct flex items of
+   Roblox's .chip-filters-container and inherit its gap/alignment. */
+@utility rotector-friends-tag-filters-host {
+	display: contents;
+}
+
+@utility rotector-friends-tag-filters {
+	display: contents;
+}
+
+/* The tag chips can outnumber the two native chips, so let the row wrap
+   instead of overflowing the friends header. */
+.chip-filters-container.rotector-friends-chip-row {
+	flex-wrap: wrap;
+	row-gap: 8px;
+}
+
+/* While a tag filter is active it owns the white "selected" look, so the
+   native All/Trusted chip has to fall back to the unselected surface. Roblox's
+   chip pairs .bg-shift-300/.content-action-utility (normal) with
+   .bg-inverse-surface-0/.content-inverse-emphasis (selected); we only need to
+   override the latter. The :not() keeps the extension's own chips out of it,
+   since they use the same selected classes. Values come from Roblox's
+   Foundation CSS variables, so this follows the page's light/dark theme
+   automatically. */
+.chip-filters-container.rotector-friends-chip-row-tag-active
+	button.bg-inverse-surface-0:not(.rotector-friends-tag-filters-host button) {
+	background-color: var(--color-shift-300);
+	color: var(--color-action-utility-foreground);
+}
+
+/* Same leading-icon slot and label spacing Roblox uses in its chip component. */
+@utility rotector-friends-tag-icon {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	inline-size: var(--icon-size-small);
+	block-size: var(--icon-size-small);
+}
+
+@utility rotector-friends-tag-label {
+	padding-inline-start: var(--size-150);
+}
+
+/* =================================
+   FILTERED NATIVE CARD GRID
+   ================================= */
+
+@utility rotector-friends-filtered-host {
+	/* Sits exactly where the native page's card list would have been. */
+	display: block;
+}
+
+/* We deliberately omit Roblox's .hlist class: the friends-page observer keys
+   off .hlist.avatar-cards, and our replacement list must not be mistaken for
+   a fresh native page container. The .avatar-cards rules still style the grid. */
+@utility rotector-friends-filter-cards {
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+
+	/* Roblox scopes this to .hlist, which we intentionally omit so the list
+	   observer does not adopt our replacement grid. */
+	& .list-item a {
+		display: block;
+	}
+}
+
+@utility rotector-friends-filter-pager {
+	margin-top: 8px;
+}
+
+@utility rotector-friends-filter-pager-btn {
+	@apply cursor-pointer border-0 bg-transparent p-0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: normal;
+
+	&:disabled {
+		cursor: default;
+		opacity: 0.35;
+	}
+}

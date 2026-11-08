@@ -3,14 +3,14 @@
 	import { updateSetting } from '@/lib/stores/settings';
 	import { SETTINGS_KEYS } from '@/lib/types/settings';
 	import { apiClient } from '@/lib/services/rotector/api-client';
-	import { asApiError } from '@/lib/utils/api/api-error';
+	import { asApiError, buildResponseError } from '@/lib/utils/api/api-error';
 	import { logger } from '@/lib/utils/logging/logger';
 	import { loadCustomApis } from '@/lib/stores/custom-apis';
 	import { showSuccess } from '@/lib/stores/toast';
 	import Modal from '../ui/Modal.svelte';
 	import ExtLink from '@/components/ui/ExtLink.svelte';
 	import DiscordSignIn from './DiscordSignIn.svelte';
-	import { ExternalLink } from '@lucide/svelte';
+	import { ExternalLink, Eye, EyeOff } from '@lucide/svelte';
 	import { getAssetUrl } from '@/lib/utils/assets';
 
 	interface Props {
@@ -22,6 +22,7 @@
 
 	let isOpen = $state(true);
 	let apiKey = $state('');
+	let showKey = $state(false);
 	let isValidating = $state(false);
 	let validationError = $state<string | null>(null);
 
@@ -54,7 +55,7 @@
 
 			if (!response.success) {
 				logger.error('[ApiKeyModal] whoami returned success=false', { error: response.error });
-				throw new Error(response.error ?? 'Invalid response');
+				throw buildResponseError(response);
 			}
 
 			// Store the API key
@@ -107,37 +108,7 @@
 	}
 
 	function toggleVisibility() {
-		// The modal is rendered in a shadow root via OverlayPortal, so we need to query within the shadow root
-		// Find the modal root element that contains the shadow root
-		let input: HTMLInputElement | null = null;
-
-		// First try direct document (for non-shadow DOM contexts)
-		const directInput = document.querySelector('#api-key');
-		if (directInput instanceof HTMLInputElement) {
-			input = directInput;
-		}
-
-		// If not found, try to find it in shadow roots
-		if (!input) {
-			// Check all elements with shadow roots for the input
-			const allElements = document.querySelectorAll('*');
-			for (const el of allElements) {
-				if (el.shadowRoot) {
-					const found = el.shadowRoot.querySelector('#api-key');
-					if (found instanceof HTMLInputElement) {
-						input = found;
-						break;
-					}
-				}
-			}
-		}
-
-		if (input) {
-			input.type = input.type === 'password' ? 'text' : 'password';
-			logger.debug('[ApiKeyModal] Toggled visibility', { newType: input.type });
-		} else {
-			logger.error('[ApiKeyModal] Could not find input element for visibility toggle');
-		}
+		showKey = !showKey;
 	}
 </script>
 
@@ -172,26 +143,21 @@
 							}
 						}}
 						placeholder={$_('api_key_modal_placeholder')}
-						type="password"
+						type={showKey ? 'text' : 'password'}
 						bind:value={apiKey}
 					/>
 					<button
 						class="toggle-visibility"
 						aria-label={$_('api_key_modal_toggle_visibility')}
+						aria-pressed={showKey}
 						onclick={toggleVisibility}
 						type="button"
 					>
-						<svg
-							fill="none"
-							height="20"
-							stroke="currentColor"
-							stroke-width="2"
-							viewBox="0 0 24 24"
-							width="20"
-						>
-							<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-							<circle cx="12" cy="12" r="3" />
-						</svg>
+						{#if showKey}
+							<EyeOff size={20} />
+						{:else}
+							<Eye size={20} />
+						{/if}
 					</button>
 				</div>
 				{#if validationError}
@@ -210,7 +176,15 @@
 	</div>
 
 	{#snippet actions()}
-		<button class="modal-button-cancel" disabled={isValidating} onclick={onClose} type="button">
+		<button
+			class="modal-button-cancel"
+			disabled={isValidating}
+			onclick={() => {
+				isOpen = false;
+				onClose();
+			}}
+			type="button"
+		>
 			{$_('api_key_modal_cancel')}
 		</button>
 		<button

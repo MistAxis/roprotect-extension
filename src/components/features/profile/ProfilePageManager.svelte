@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import { mount, unmount } from 'svelte';
+	import { _ } from 'svelte-i18n';
+	import { showError } from '@/lib/stores/toast';
 	import { settings } from '@/lib/stores/settings';
 	import { logger } from '@/lib/utils/logging/logger';
 	import { waitForElement } from '@/lib/utils/dom/element-waiter';
@@ -34,7 +36,7 @@
 		setProfileTextBlurState,
 		observeProfileBlur
 	} from '@/lib/services/blur/profile';
-	import { isFlagged } from '@/lib/utils/status/status-utils';
+	import { isFlagged, withUpdatedProviderData } from '@/lib/utils/status/status-utils';
 	import { getRotectorMembershipBadge } from '@/lib/utils/status/status-projection';
 	import { detectEncoding } from '@/lib/services/cipher/encoding-detector';
 	import { getLoggedInUserId } from '@/lib/utils/client-id';
@@ -227,7 +229,12 @@
 				container = document.createElement('div');
 				container.className = COMPONENT_CLASSES.PROFILE_STATUS;
 				container.dataset['rotectorOwned'] = 'true';
+			}
 
+			// Roblox renders the verified/premium/Roblox Plus icon group as a sibling
+			// after the title span. Keep our indicator after those icons instead of
+			// letting React re-render reorder the title row around it.
+			if (titleContainer.lastElementChild !== container) {
 				titleContainer.append(container);
 			}
 
@@ -267,9 +274,13 @@
 					suppressMembershipBadge: true,
 					onClick: handleStatusClick,
 					onQueue: handleQueueUser,
-					// A PASC save/refresh changes the authoritative verdict; refetch so
-					// the profile warning and blur state follow it.
-					onStatusUpdate: () => querySubscription.refresh()
+					// A PASC save/refresh changes the authoritative verdict. Merge the
+					// returned record instead of refetching every provider (which blanked
+					// the tab and could regress the verdict on a transient failure).
+					onStatusUpdate: (status: UserStatus) => {
+						if (!userStatus) return;
+						userStatus = withUpdatedProviderData(userStatus, 'system-pasc', status);
+					}
 				}
 			});
 		} catch (error) {
@@ -558,6 +569,15 @@
 			}
 			return true;
 		}
+
+		// Roblox may re-render the icon group into the title row. Move the indicator
+		// back after the icons without rebuilding the whole component.
+		const titleRow = containerInActiveHeader.parentElement;
+		if (titleRow && titleRow.lastElementChild !== containerInActiveHeader) {
+			titleRow.append(containerInActiveHeader);
+			return true;
+		}
+
 		return false;
 	}
 
@@ -622,13 +642,14 @@
 
 	async function handleFriendBlock() {
 		logger.userAction(USER_ACTIONS.FRIEND_BLOCK, { userId });
-		friendWarningOpen = false;
 
 		try {
 			await blockUser(userId);
+			friendWarningOpen = false;
 			globalThis.location.reload();
 		} catch (error) {
 			logger.error('Failed to block user:', error);
+			showError($_('friend_warning_block_failed'));
 		}
 	}
 

@@ -23,17 +23,27 @@
 
 	function handleInput(event: Event) {
 		if (!(event.target instanceof HTMLInputElement)) return;
-		const parsed = Number.parseInt(event.target.value, 10);
-		const newValue = Math.max(min, Math.min(max, Number.isNaN(parsed) ? min : parsed));
-		value = newValue;
-		onChange(newValue);
+		const raw = event.target.value.trim();
+		if (raw === '') return;
+		const parsed = Number.parseInt(raw, 10);
+		if (Number.isNaN(parsed)) return;
+		// Let the user type through out-of-range intermediates ("1" before "12");
+		// the value is clamped and committed on blur.
+		if (parsed < min || parsed > max) return;
+		value = parsed;
+		onChange(parsed);
 	}
 
 	function handleBlur(event: FocusEvent) {
 		if (!(event.target instanceof HTMLInputElement)) return;
-		if (Number.parseInt(event.target.value, 10) !== value) {
-			event.target.value = String(value);
+		const input = event.target;
+		const parsed = Number.parseInt(input.value, 10);
+		const next = Math.max(min, Math.min(max, Number.isNaN(parsed) ? value : parsed));
+		if (next !== value) {
+			value = next;
+			onChange(next);
 		}
+		input.value = String(next);
 	}
 </script>
 

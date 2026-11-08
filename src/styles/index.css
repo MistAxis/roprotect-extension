@@ -45,7 +45,6 @@
 @import url('./popup/options/api/documentation.css');
 @import url('./popup/options/membership/membership.css');
 @import url('./popup/footer.css');
-@import url('./popup/legal-paused.css');
 
 /* =================================
    FEATURE IMPORTS
@@ -72,6 +71,7 @@
 @import url('./features/group-members-carousel.css');
 @import url('./features/export-modal.css');
 @import url('./features/scan-bar.css');
+@import url('./features/friends-filter.css');
 @import url('./features/queue-limits.css');
 @import url('./features/cipher.css');
 @import url('./features/membership-pill.css');

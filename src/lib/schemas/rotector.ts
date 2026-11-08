@@ -14,13 +14,13 @@ const GROUP_FLAG_VALUES = [
 ];
 
 export const ReviewerInfoSchema = v.object({
-	username: v.optional(v.string()),
-	displayName: v.optional(v.string())
+	username: v.optional(v.pipe(v.string(), v.maxLength(128))),
+	displayName: v.optional(v.pipe(v.string(), v.maxLength(128)))
 });
 
 export const ReasonSchema = v.object({
 	confidence: v.number(),
-	message: v.optional(v.string()),
+	message: v.optional(v.pipe(v.string(), v.maxLength(2000))),
 	evidence: v.optional(NullableStringArray)
 });
 
@@ -38,9 +38,9 @@ const UserStatusBaseSchema = v.object({
 	flagType: v.fallback(v.picklist(USER_FLAG_VALUES), STATUS.FLAGS.UNKNOWN),
 	category: v.optional(v.number()),
 	confidence: v.optional(v.number(), 0),
-	reasons: v.optional(v.record(v.string(), ReasonSchema), () => ({})),
+	reasons: v.optional(v.record(v.pipe(v.string(), v.maxLength(64)), ReasonSchema), () => ({})),
 	reviewer: v.optional(ReviewerInfoSchema),
-	engineVersion: v.optional(v.string()),
+	engineVersion: v.optional(v.pipe(v.string(), v.maxLength(64))),
 	versionCompatibility: v.optional(VersionCompatibilitySchema),
 	isReportable: v.optional(v.boolean()),
 	queuedAt: v.optional(v.number()),
@@ -52,12 +52,15 @@ const UserStatusBaseSchema = v.object({
 	pascRecordPresent: v.optional(v.boolean()),
 	pascMissing: v.optional(v.boolean()),
 	badges: v.optional(
-		v.array(
-			v.object({
-				text: v.string(),
-				color: v.optional(v.string()),
-				textColor: v.optional(v.string())
-			})
+		v.pipe(
+			v.array(
+				v.object({
+					text: v.pipe(v.string(), v.maxLength(128)),
+					color: v.optional(v.pipe(v.string(), v.maxLength(64))),
+					textColor: v.optional(v.pipe(v.string(), v.maxLength(64)))
+				})
+			),
+			v.maxLength(10)
 		)
 	),
 	membershipBadge: v.optional(MembershipBadgeSchema)
@@ -67,7 +70,7 @@ const GroupStatusBaseSchema = v.object({
 	id: v.number(),
 	flagType: v.fallback(v.picklist(GROUP_FLAG_VALUES), STATUS.FLAGS.UNKNOWN),
 	confidence: v.optional(v.number(), 0),
-	reasons: v.optional(v.record(v.string(), ReasonSchema), () => ({}))
+	reasons: v.optional(v.record(v.pipe(v.string(), v.maxLength(64)), ReasonSchema), () => ({}))
 });
 
 export const UserStatusSchema = v.pipe(UserStatusBaseSchema, v.brand('UserStatus'));
@@ -104,31 +107,31 @@ export const QueueResultSchema = v.variant('success', [
 	}),
 	v.object({
 		success: v.literal(false),
-		error: v.optional(v.string()),
-		requestId: v.optional(v.string()),
-		code: v.optional(v.string()),
-		type: v.optional(v.string())
+		error: v.optional(v.pipe(v.string(), v.maxLength(2000))),
+		requestId: v.optional(v.pipe(v.string(), v.maxLength(128))),
+		code: v.optional(v.pipe(v.string(), v.maxLength(64))),
+		type: v.optional(v.pipe(v.string(), v.maxLength(64)))
 	})
 ]);
 
 export const TrackedUserSchema = v.object({
 	id: v.number(),
-	name: v.string(),
-	displayName: v.string(),
+	name: v.pipe(v.string(), v.maxLength(128)),
+	displayName: v.pipe(v.string(), v.maxLength(128)),
 	thumbnailUrl: NullableString,
 	isActive: v.boolean()
 });
 
 export const GroupTrackedUsersSchema = v.object({
-	users: v.array(TrackedUserSchema),
+	users: v.pipe(v.array(TrackedUserSchema), v.maxLength(100)),
 	totalCount: v.number(),
-	nextCursor: v.nullable(v.string()),
+	nextCursor: v.nullable(v.pipe(v.string(), v.maxLength(256))),
 	hasMore: v.boolean()
 });
 
 const DiscordServerInfoSchema = v.object({
-	serverId: v.string(),
-	serverName: v.string(),
+	serverId: v.pipe(v.string(), v.maxLength(32)),
+	serverName: v.pipe(v.string(), v.maxLength(128)),
 	joinedAt: v.nullable(v.number()),
 	updatedAt: v.nullable(v.number()),
 	firstSeenAt: v.number(),
@@ -138,41 +141,47 @@ const DiscordServerInfoSchema = v.object({
 
 export const RobloxAltAccountSchema = v.object({
 	robloxUserId: v.number(),
-	robloxUsername: v.string(),
+	robloxUsername: v.pipe(v.string(), v.maxLength(128)),
 	detectedAt: v.number(),
 	updatedAt: v.number(),
-	sources: v.array(v.number())
+	sources: v.pipe(v.array(v.number()), v.maxLength(50))
 });
 
 export const DiscordAccountInfoSchema = v.object({
-	id: v.string(),
+	id: v.pipe(v.string(), v.maxLength(32)),
 	detectedAt: v.nullable(v.number()),
 	updatedAt: v.nullable(v.number()),
-	servers: v.array(DiscordServerInfoSchema),
-	sources: v.array(v.number())
+	servers: v.pipe(v.array(DiscordServerInfoSchema), v.maxLength(100)),
+	sources: v.pipe(v.array(v.number()), v.maxLength(50))
 });
 
 export const RobloxUserDiscordLookupSchema = v.object({
 	robloxUserId: v.number(),
-	discordAccounts: v.array(DiscordAccountInfoSchema),
-	altAccounts: v.array(RobloxAltAccountSchema)
+	discordAccounts: v.pipe(v.array(DiscordAccountInfoSchema), v.maxLength(20)),
+	altAccounts: v.pipe(v.array(RobloxAltAccountSchema), v.maxLength(50))
 });
 
 const OutfitSnapshotByNameRawSchema = v.object({
-	results: v.array(
-		v.object({
-			name: v.string(),
-			urls: v.array(v.string())
-		})
+	results: v.pipe(
+		v.array(
+			v.object({
+				name: v.pipe(v.string(), v.maxLength(128)),
+				urls: v.pipe(v.array(v.pipe(v.string(), v.maxLength(2048))), v.maxLength(50))
+			})
+		),
+		v.maxLength(100)
 	)
 });
 
 const OutfitSnapshotByIdRawSchema = v.object({
-	results: v.array(
-		v.object({
-			outfitId: v.string(),
-			urls: v.array(v.string())
-		})
+	results: v.pipe(
+		v.array(
+			v.object({
+				outfitId: v.pipe(v.string(), v.maxLength(32)),
+				urls: v.pipe(v.array(v.pipe(v.string(), v.maxLength(2048))), v.maxLength(50))
+			})
+		),
+		v.maxLength(100)
 	)
 });
 
@@ -192,8 +201,8 @@ export const MembershipStatusSchema = v.object({
 
 export const MembershipVerificationChallengeSchema = v.object({
 	robloxUserId: v.number(),
-	phrase: v.string(),
-	instructions: v.string()
+	phrase: v.pipe(v.string(), v.maxLength(256)),
+	instructions: v.pipe(v.string(), v.maxLength(2000))
 });
 
 export const parseUserStatus = v.parser(UserStatusSchema);

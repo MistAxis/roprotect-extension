@@ -1,7 +1,7 @@
 import { LOG_SOURCES } from '../../types/developer-logs';
 import { TRACE_CATEGORIES, type TraceCategory } from '../../types/performance';
 import { addPerformanceEntry } from '../../stores/performance';
-import { getLogSource, IS_DEV, truncateForLog } from './log-source';
+import { getLogSource, IS_DEV, redactUrlForLog, truncateForLog } from './log-source';
 
 const MAX_DATA_LENGTH = 500;
 
@@ -27,7 +27,8 @@ function logTrace(data: TraceData): void {
 	if (!IS_DEV) return;
 
 	const source = getLogSource();
-	const pageUrl = source === LOG_SOURCES.CONTENT ? globalThis.location.href : undefined;
+	const pageUrl =
+		source === LOG_SOURCES.CONTENT ? redactUrlForLog(globalThis.location.href) : undefined;
 	const { category, operation, duration, success = true, ...rest } = data;
 
 	addPerformanceEntry({

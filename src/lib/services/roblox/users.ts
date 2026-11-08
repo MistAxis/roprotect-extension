@@ -15,7 +15,23 @@ interface CacheEntry {
 }
 
 const TTL_MS = 5 * 60_000;
+// Browsing friends/groups can touch thousands of ids in one session. Keep the
+// name cache bounded and drop expired entries instead of retaining every user
+// ever rendered.
+const MAX_CACHE_ENTRIES = 1000;
 const cache = new Map<number, CacheEntry>();
+
+function evictIfNeeded(): void {
+	const now = Date.now();
+	for (const [id, entry] of cache) {
+		if (entry.expiresAt <= now) cache.delete(id);
+	}
+	while (cache.size > MAX_CACHE_ENTRIES) {
+		const oldest = cache.keys().next().value;
+		if (oldest === undefined) break;
+		cache.delete(oldest);
+	}
+}
 
 async function fetchUserNames(userIds: number[]): Promise<Map<number, UserInfo>> {
 	const response = await fetch(`${ROBLOX_API.USERS}/v1/users`, {
@@ -69,6 +85,7 @@ export async function getUsersInfoBatch(userIds: number[]): Promise<Map<number, 
 			cache.set(id, { info, expiresAt });
 			out.set(id, info);
 		}
+		evictIfNeeded();
 	} catch (error) {
 		logger.error('Error fetching user names batch:', error);
 		for (const id of missing) {

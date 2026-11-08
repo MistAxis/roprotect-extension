@@ -1,3 +1,13 @@
+<script lang="ts" module>
+	// Shared across every Modal instance so only the top-most dialog handles Escape.
+	const modalStack: number[] = [];
+	let nextModalId = 0;
+
+	function allocateModalId(): number {
+		return ++nextModalId;
+	}
+</script>
+
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import OverlayPortal from '@/components/overlay/OverlayPortal.svelte';
@@ -22,7 +32,8 @@
 		confirmDanger?: boolean;
 		confirmDisabled?: boolean;
 		onClose?: () => void;
-		onConfirm?: () => void;
+		/** Return `false` (or a rejected promise) to keep the dialog open. */
+		onConfirm?: () => unknown;
 		onCancel?: () => void;
 		children: import('svelte').Snippet;
 		actions?: import('svelte').Snippet;
@@ -62,6 +73,7 @@
 	const headingId = `modal-title-${Math.random().toString(36).slice(2)}`;
 
 	let isClosing = $state(false);
+	let isConfirming = $state(false);
 	let overlayElement = $state<HTMLDivElement>();
 	let popupElement = $state<HTMLDivElement>();
 	let closeButtonEl = $state<HTMLButtonElement>();
@@ -72,13 +84,36 @@
 
 	let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function closeModal(result?: boolean) {
+	// Only the top-most mounted modal reacts to Escape, otherwise one press would
+	// dismiss every stacked dialog (changelog over review prompt, etc.).
+	const modalId = allocateModalId();
+
+	async function closeModal(result?: boolean) {
+		// A double click would otherwise schedule two timers and fire onConfirm twice.
+		if (isClosing || isConfirming) return;
+
+		// Run the confirm action before hiding the dialog so a validation failure or
+		// a failed save can keep it open with its errors still visible.
+		if (result === true && onConfirm) {
+			isConfirming = true;
+			let shouldClose: boolean;
+			try {
+				const outcome = await onConfirm();
+				shouldClose = outcome !== false;
+			} catch {
+				shouldClose = false;
+			} finally {
+				isConfirming = false;
+			}
+			if (!shouldClose) return;
+		}
+
 		isClosing = true;
 		closeTimer = setTimeout(() => {
 			closeTimer = null;
 			isOpen = false;
 			isClosing = false;
-			(result === true ? onConfirm : result === false ? onCancel : undefined)?.();
+			if (result === false) onCancel?.();
 			onClose?.();
 			previouslyFocusedElement?.focus();
 		}, 250);
@@ -86,18 +121,20 @@
 
 	onDestroy(() => {
 		if (closeTimer) clearTimeout(closeTimer);
+		const index = modalStack.indexOf(modalId);
+		if (index !== -1) modalStack.splice(index, 1);
 	});
 
 	function handleEscape(e: KeyboardEvent) {
-		if (e.key === 'Escape' && isOpen && showClose) {
-			closeModal(false);
+		if (e.key === 'Escape' && isOpen && showClose && modalStack.at(-1) === modalId) {
+			void closeModal(false);
 		}
 	}
 
 	function handleOverlayClick(e: MouseEvent) {
 		const target = e.composedPath()[0];
 		if (target === overlayElement && showClose && closeOnOverlayClick) {
-			closeModal(false);
+			void closeModal(false);
 		}
 	}
 
@@ -111,9 +148,22 @@
 		].filter((el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true');
 		const first = focusable[0];
 		const last = focusable.at(-1);
-		if (!first || !last) return;
+		if (!first || !last) {
+			e.preventDefault();
+			popupElement.focus();
+			return;
+		}
 		const root = popupElement.getRootNode() as Document | ShadowRoot;
 		const active = root.activeElement instanceof HTMLElement ? root.activeElement : null;
+
+		// Focus on the dialog itself (or anything outside it) must be pulled back in,
+		// otherwise Tab walks into the page behind the modal.
+		if (!active || !popupElement.contains(active)) {
+			e.preventDefault();
+			(e.shiftKey ? last : first).focus();
+			return;
+		}
+
 		if (e.shiftKey && active === first) {
 			e.preventDefault();
 			last.focus();
@@ -125,8 +175,12 @@
 
 	$effect(() => {
 		if (isOpen) {
-			previouslyFocusedElement =
-				document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			modalStack.push(modalId);
+			// Elements portaled into the content-script shadow root make
+			// document.activeElement the host, so look one level deeper.
+			const active = document.activeElement;
+			const innerActive = active?.shadowRoot?.activeElement ?? active;
+			previouslyFocusedElement = innerActive instanceof HTMLElement ? innerActive : null;
 			document.addEventListener('keydown', handleEscape);
 			requestAnimationFrame(() => {
 				if (overlayElement) {
@@ -138,7 +192,11 @@
 					popupElement.focus();
 				}
 			});
-			return () => document.removeEventListener('keydown', handleEscape);
+			return () => {
+				document.removeEventListener('keydown', handleEscape);
+				const index = modalStack.indexOf(modalId);
+				if (index !== -1) modalStack.splice(index, 1);
+			};
 		}
 		return () => {};
 	});
@@ -200,7 +258,7 @@
 							bind:this={closeButtonEl}
 							class="modal-close"
 							aria-label="Close dialog"
-							onclick={() => closeModal(false)}
+							onclick={() => void closeModal(false)}
 							type="button"
 						>
 							<X aria-hidden="true" size={18} />
@@ -221,15 +279,19 @@
 							{@render actions()}
 						{:else}
 							{#if showCancel}
-								<button class="modal-button-cancel" onclick={() => closeModal(false)} type="button">
+								<button
+									class="modal-button-cancel"
+									onclick={() => void closeModal(false)}
+									type="button"
+								>
 									{cancelText}
 								</button>
 							{/if}
 							{#if showConfirm}
 								<button
 									class={confirmDanger ? 'modal-button-danger' : 'modal-button-primary'}
-									disabled={confirmDisabled}
-									onclick={() => closeModal(true)}
+									disabled={confirmDisabled || isConfirming}
+									onclick={() => void closeModal(true)}
 									type="button"
 								>
 									{confirmText}

@@ -4,6 +4,7 @@ import { developerLogs } from '@/lib/stores/developer-logs';
 import { settings } from '@/lib/stores/settings';
 import type { LogEntry } from '@/lib/types/developer-logs';
 import { SETTINGS_KEYS } from '@/lib/types/settings';
+import { redactUrlForLog, sanitizeLogValue } from '@/lib/utils/logging/log-source';
 
 const SENSITIVE_SETTING_KEYS = new Set<string>([SETTINGS_KEYS.API_KEY]);
 
@@ -39,12 +40,7 @@ function getSystemInfo(): SystemInfo {
 }
 
 function redactUrl(url: string): string {
-	try {
-		const u = new URL(url);
-		return `${u.origin}${u.pathname}`;
-	} catch {
-		return '[invalid URL]';
-	}
+	return redactUrlForLog(url);
 }
 
 function formatSettingValue(value: unknown): string {
@@ -59,11 +55,11 @@ function formatLogEntry(log: LogEntry): string[] {
 	const time = new Date(log.timestamp).toISOString().slice(11, 23);
 	const lines = [`[${time}] [${log.level.toUpperCase().padEnd(6)}] [${log.source}] ${log.message}`];
 
-	if (log.pageUrl) lines.push(`URL: ${log.pageUrl}`);
+	if (log.pageUrl) lines.push(`URL: ${redactUrlForLog(log.pageUrl)}`);
 
 	if (log.data !== undefined) {
 		try {
-			lines.push(`Data: ${JSON.stringify(log.data, null, 2)}`);
+			lines.push(`Data: ${JSON.stringify(sanitizeLogValue(log.data), null, 2)}`);
 		} catch {
 			lines.push('Data: [Unable to serialize]');
 		}

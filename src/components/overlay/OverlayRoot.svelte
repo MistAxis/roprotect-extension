@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import ChangelogModal from '@/components/changelog/ChangelogModal.svelte';
+	import OnboardingManager from '@/components/onboarding/OnboardingManager.svelte';
 	import ApiKeyEntryModal from '@/components/legal/ApiKeyEntryModal.svelte';
 	import OutfitViewerModal from '@/components/features/outfit/OutfitViewerModal.svelte';
 	import FirstDetectionModal from '@/components/features/profile/FirstDetectionModal.svelte';
@@ -9,6 +10,7 @@
 	import Toast from '@/components/ui/Toast.svelte';
 	import { shouldShowChangelogModal } from '@/lib/stores/changelog';
 	import { shouldShowApiKeyModal } from '@/lib/stores/legal';
+	import { shouldShowOnboarding } from '@/lib/stores/onboarding';
 	import { shouldShowFirstDetection } from '@/lib/stores/first-detection';
 	import { shouldShowRestrictionNotice } from '@/lib/stores/restricted-access';
 	import { loadReviewPromptState, shouldShowReviewPrompt } from '@/lib/stores/review-prompt';
@@ -40,7 +42,9 @@
 	void loadReviewPromptState();
 </script>
 
-{#if $shouldShowApiKeyModal}
+{#if $shouldShowOnboarding}
+	<OnboardingManager />
+{:else if $shouldShowApiKeyModal}
 	<ApiKeyEntryModal
 		onClose={() => logger.debug('API key modal closed')}
 		onSuccess={() => logger.debug('API key validated successfully')}

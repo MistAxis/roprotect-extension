@@ -3,7 +3,11 @@
 	import { LoaderCircle } from '@lucide/svelte';
 	import Modal from '../../ui/Modal.svelte';
 	import StatusIcon from '@/components/icons/StatusIcon.svelte';
-	import { restrictedAccessStore, markRestrictionNoticeSeen } from '@/lib/stores/restricted-access';
+	import {
+		restrictedAccessStore,
+		markRestrictionNoticeSeen,
+		resetRestrictedAccess
+	} from '@/lib/stores/restricted-access';
 	import { apiClient } from '@/lib/services/rotector/api-client';
 	import { LOOKUP_CONTEXT } from '@/lib/types/constants';
 	import { getCurrentAvatarInfo } from '@/lib/services/roblox/api';
@@ -17,6 +21,7 @@
 	let userInfo = $state<{ username: string; thumbnailUrl: string | null } | null>(null);
 	let userStatus = $state<UserStatus | null>(null);
 	let reasonsLoading = $state(true);
+	let retrying = $state(false);
 
 	const restrictionTimestamp = $derived($restrictedAccessStore.timestamp);
 
@@ -74,6 +79,21 @@
 
 	function handleAppeal() {
 		window.open('https://rotector.com', '_blank', 'noopener,noreferrer');
+	}
+
+	// Clears the cached restriction and re-checks. If access is still denied the
+	// next lookup re-marks it, so this cannot unlock anything server-side.
+	async function handleRetryAccess() {
+		if (retrying) return;
+		retrying = true;
+		try {
+			await resetRestrictedAccess();
+			if (restrictionTimestamp != null) await markRestrictionNoticeSeen(restrictionTimestamp);
+			globalThis.location.reload();
+		} catch (error) {
+			logger.error('Failed to re-check access:', error);
+			retrying = false;
+		}
 	}
 </script>
 
@@ -180,5 +200,13 @@
 			<h3 class="modal-section-title">{$_('restriction_notice_appeal_title')}</h3>
 		</header>
 		<p class="modal-paragraph">{$_('restriction_notice_appeal_body')}</p>
+		<button
+			class="modal-button-cancel"
+			disabled={retrying}
+			onclick={handleRetryAccess}
+			type="button"
+		>
+			{retrying ? $_('restriction_notice_retry_checking') : $_('restriction_notice_retry_access')}
+		</button>
 	</div>
 </Modal>
