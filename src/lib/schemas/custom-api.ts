@@ -163,12 +163,16 @@ export const CustomApiResponseEnvelopeSchema = v.variant('success', [
 
 const MAX_URL_LENGTH = 2048;
 const MAX_DATA_URL_LENGTH = 512_000;
+export const MAX_IMPORTED_API_NAME_LENGTH = 12;
 
 const ImportedApiConfigSchema = v.object({
 	name: v.pipe(
 		v.string('Missing or invalid "name" field'),
-		v.minLength(1, 'Name must be between 1 and 12 characters'),
-		v.maxLength(12, 'Name must be between 1 and 12 characters')
+		v.minLength(1, `Name must be between 1 and ${String(MAX_IMPORTED_API_NAME_LENGTH)} characters`),
+		v.maxLength(
+			MAX_IMPORTED_API_NAME_LENGTH,
+			`Name must be between 1 and ${String(MAX_IMPORTED_API_NAME_LENGTH)} characters`
+		)
 	),
 	singleUrl: v.pipe(
 		v.string('Missing or invalid "singleUrl" field'),

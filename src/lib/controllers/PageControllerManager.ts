@@ -181,13 +181,19 @@ export class PageControllerManager {
 	}
 
 	private async cleanupCurrentController(): Promise<void> {
-		if (this.currentController) {
-			try {
-				await this.currentController.cleanup();
-				logger.debug(`Cleaned up controller for ${this.currentController.pageType}`);
-			} catch (error) {
-				logger.error('Failed to cleanup current controller:', error);
-			} finally {
+		// Capture the instance: a cleanup can be in flight while a newer
+		// navigation mounts its controller, and the late `finally` must not clear
+		// (and then leak) that newer controller.
+		const controller = this.currentController;
+		if (!controller) return;
+
+		try {
+			await controller.cleanup();
+			logger.debug(`Cleaned up controller for ${controller.pageType}`);
+		} catch (error) {
+			logger.error('Failed to cleanup current controller:', error);
+		} finally {
+			if (this.currentController === controller) {
 				this.currentController = null;
 				this.currentUrl = null;
 			}

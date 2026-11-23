@@ -17,6 +17,7 @@
 	let showMembersList = $state(false);
 	let showExportModal = $state(false);
 	let exportButton: HTMLButtonElement | null = $state(null);
+	let destroyed = false;
 
 	$effect(() => {
 		void initialize();
@@ -25,8 +26,8 @@
 
 	async function initialize() {
 		const result = await waitForElement(GROUP_CONFIGURE_SELECTORS.CONTAINER);
-		if (!result.success) {
-			logger.warn('Group configure members container not found');
+		if (!result.success || destroyed) {
+			if (!result.success) logger.warn('Group configure members container not found');
 			return;
 		}
 		showMembersList = true;
@@ -38,8 +39,8 @@
 
 	async function injectExportButton() {
 		const headerResult = await waitForElement(GROUP_CONFIGURE_SELECTORS.HEADER);
-		if (!headerResult.success) {
-			logger.warn('Group configure header not found for export button');
+		if (!headerResult.success || destroyed) {
+			if (!headerResult.success) logger.warn('Group configure header not found for export button');
 			return;
 		}
 
@@ -66,6 +67,7 @@
 	}
 
 	function cleanup() {
+		destroyed = true;
 		showMembersList = false;
 		if (exportButton) exportButton.remove();
 	}

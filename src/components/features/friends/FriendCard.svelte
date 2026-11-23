@@ -9,7 +9,8 @@
 		resetElementBlur,
 		revealUserElement
 	} from '@/lib/services/blur/service';
-	import { updateFriendScanStatus } from '@/lib/stores/friends-scan';
+	import { friendsScanStore, updateFriendScanStatus } from '@/lib/stores/friends-scan';
+	import { applyFriendScanStatusUpdate } from '@/lib/services/rotector/friends-scan-manager';
 	import StatusIndicator from '../../status/StatusIndicator.svelte';
 
 	interface Props {
@@ -48,7 +49,9 @@
 	});
 
 	function handleStatusUpdate(next: UserStatus): void {
-		updateFriendScanStatus(userId, next);
+		const combined = updateFriendScanStatus(userId, next);
+		const scanUserId = $friendsScanStore.userId;
+		if (combined && scanUserId) applyFriendScanStatusUpdate(scanUserId, userId, combined);
 	}
 </script>
 

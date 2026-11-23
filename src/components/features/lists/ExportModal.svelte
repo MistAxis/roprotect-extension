@@ -69,7 +69,9 @@
 			document.body.append(a);
 			a.click();
 			a.remove();
-			URL.revokeObjectURL(url);
+			// Firefox can abort the download if the blob URL is revoked before the
+			// navigation consumes it, so release it on the next task.
+			setTimeout(() => URL.revokeObjectURL(url), 1000);
 
 			isOpen = false;
 		} catch (error) {

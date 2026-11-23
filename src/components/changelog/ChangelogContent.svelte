@@ -9,6 +9,14 @@
 
 	let { changelog }: ChangelogContentProps = $props();
 
+	// `new Date('2026-11-07')` is UTC midnight, which renders as the previous day
+	// west of UTC. Build a local date from the components instead.
+	function formatChangelogDate(date: string): string {
+		const [year, month, day] = date.split('-').map(Number);
+		if (!year || !month || !day) return date;
+		return new Date(year, month - 1, day).toLocaleDateString();
+	}
+
 	const TYPE_COLOR: Record<ChangelogEntry['type'], string> = {
 		added: 'changelog-entry-added',
 		changed: 'changelog-entry-changed',
@@ -55,7 +63,7 @@
 			<h3 class="changelog-title">{changelog.title}</h3>
 			<div class="changelog-meta">
 				<span class="changelog-version">v{changelog.version}</span>
-				<span class="changelog-date">{new Date(changelog.date).toLocaleDateString()}</span>
+				<span class="changelog-date">{formatChangelogDate(changelog.date)}</span>
 			</div>
 		</div>
 	</div>

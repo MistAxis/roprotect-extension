@@ -235,10 +235,12 @@ function extractUsedKeys() {
 			usedKeys.add(match[1]);
 		}
 
-		// Pattern 3: Keys assigned to variables ending with Key (case-insensitive).
-		// Matches: const titleKey = 'key', let messageKey = ..., const ENGINE_STATUS_KEY = {...}.
+		// Pattern 3: Keys assigned to variables ending with Key/Keys/Labels (case-insensitive).
+		// Matches: const titleKey = 'key', const ENGINE_STATUS_KEY = {...},
+		//          const FILE_KIND_KEYS = [...], const PASC_FLAG_LABELS = {...}.
 		// Captures everything up to the next `;` so multi-line Records and arrays are scanned.
-		const keyVariableRegex = /\b(?:const|let)\s+(\w+[Kk][Ee][Yy])\b[^;]+/g;
+		const keyVariableRegex =
+			/\b(?:const|let)\s+(\w+(?:[Kk][Ee][Yy][Ss]?|[Ll][Aa][Bb][Ee][Ll][Ss]))\b[^;]+/g;
 		while ((match = keyVariableRegex.exec(content)) !== null) {
 			const assignment = match[0];
 			// Pick up any translation-key-shaped string literal in the assignment.
@@ -396,6 +398,40 @@ function validateI18n() {
 		hasErrors = true;
 	} else {
 		console.log(`${colors.green}✓ All placeholders match${colors.reset}\n`);
+	}
+
+	// Check 5: empty values. svelte-i18n falls back to English for an empty
+	// string, so an untranslated catalog entry silently ships English UI in that
+	// locale. An empty value in the base locale is a hard error; elsewhere it is
+	// reported so the gap is visible (the catalog convention is `""` until a
+	// translation exists).
+	console.log(`${colors.bold}${colors.yellow}Checking for empty translations...${colors.reset}`);
+	let hasEmptyTranslations = false;
+
+	for (const locale of LOCALES) {
+		const { keys, values } = localeData[locale];
+		const emptyKeys = [...keys].filter((key) => !String(values[key] ?? '').trim());
+		if (emptyKeys.length === 0) continue;
+
+		hasEmptyTranslations = true;
+		if (locale === baseLocale) {
+			hasErrors = true;
+			console.log(
+				`${colors.red}✗ ${emptyKeys.length} empty value(s) in base locale ${locale}:${colors.reset}`
+			);
+			for (const key of emptyKeys.slice(0, 20)) console.log(`  - ${key}`);
+			if (emptyKeys.length > 20) console.log(`  ... and ${emptyKeys.length - 20} more`);
+		} else {
+			console.log(
+				`${colors.yellow}⚠ ${locale}: ${emptyKeys.length} value(s) fall back to ${baseLocale}${colors.reset}`
+			);
+		}
+	}
+
+	if (hasEmptyTranslations) {
+		console.log('');
+	} else {
+		console.log(`${colors.green}✓ No empty translation values${colors.reset}\n`);
 	}
 
 	// Summary

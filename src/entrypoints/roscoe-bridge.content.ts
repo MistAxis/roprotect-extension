@@ -15,8 +15,8 @@ export default defineContentScript({
 	],
 	runAt: 'document_start',
 
-	main() {
-		window.addEventListener('message', (event: MessageEvent<unknown>) => {
+	main(ctx) {
+		function handleMessage(event: MessageEvent<unknown>): void {
 			// The captcha window is served from the RoProtect origin, which may be
 			// framed by the Roscoe page. Only that exact origin is trusted.
 			if (event.origin !== API_CONFIG.BASE_URL) return;
@@ -32,6 +32,9 @@ export default defineContentScript({
 
 			browser.runtime.sendMessage(payload).catch(() => {});
 			window.postMessage({ source: 'rotector-extension' }, event.origin);
-		});
+		}
+
+		window.addEventListener('message', handleMessage);
+		ctx.onInvalidated(() => window.removeEventListener('message', handleMessage));
 	}
 });

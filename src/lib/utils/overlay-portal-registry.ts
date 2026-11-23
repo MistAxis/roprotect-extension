@@ -7,6 +7,14 @@ export function registerOverlayContainer(container: HTMLElement): void {
 	overlayContainer = container;
 }
 
+// Clears the registration when the shadow root is torn down (navigation to an
+// unsupported page, gate close, tab teardown). Without it, a late-mounting
+// portal appends into a detached tree and disappears.
+export function unregisterOverlayContainer(container?: HTMLElement): void {
+	if (container && overlayContainer !== container) return;
+	overlayContainer = null;
+}
+
 export function getOverlayContainer(): HTMLElement | null {
 	return overlayContainer;
 }

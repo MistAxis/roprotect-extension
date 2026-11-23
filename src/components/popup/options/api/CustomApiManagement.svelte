@@ -243,7 +243,9 @@
 			document.body.append(a);
 			a.click();
 			a.remove();
-			URL.revokeObjectURL(url);
+			// Firefox can abort the download if the blob URL is revoked before the
+			// navigation consumes it, so release it on the next task.
+			setTimeout(() => URL.revokeObjectURL(url), 1000);
 
 			showSuccess($_('custom_api_mgmt_alert_export_file_success'));
 			logger.userAction('custom_api_exported_file', { apiId: api.id, apiName: api.name });
@@ -424,6 +426,7 @@
 						</div>
 						{#if !api.isSystem}
 							<Toggle
+								ariaLabel={api.name}
 								checked={api.enabled}
 								loading={togglingApiId === api.id}
 								onchange={(value: boolean) => handleToggle(api, value)}

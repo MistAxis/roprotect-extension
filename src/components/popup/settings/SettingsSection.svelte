@@ -223,6 +223,7 @@
 {#snippet toggleRow(setting: { key: SettingsKey; labelKey: string; helpTextKey?: string })}
 	{#snippet control()}
 		<Toggle
+			ariaLabel={$_(setting.labelKey)}
 			checked={!!$settings[setting.key]}
 			onchange={(value: boolean) => handleSettingChange(setting.key, value)}
 		/>
@@ -331,6 +332,7 @@
 					<div class="settings-row" data-setting-key="api-integration-{api.id}">
 						<div class="settings-row-label">{api.name}</div>
 						<Toggle
+							ariaLabel={api.name}
 							checked={api.enabled}
 							loading={togglingApiId === api.id}
 							onchange={(value: boolean) => handleApiToggle(api.id, value)}

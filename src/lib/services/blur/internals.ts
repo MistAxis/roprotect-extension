@@ -84,6 +84,10 @@ export function isBlurEnabled(): boolean {
 }
 
 export function revealSingleElement(el: Element): void {
+	// Mark the reveal with the shared class, not only inline styles: cleanup has
+	// to be able to find and re-blur this node when Roblox recycles the card for
+	// another user. Without it the old reveal survives the reset.
+	el.classList.add(BLUR_REVEALED_CLASS);
 	if (el instanceof HTMLElement) {
 		el.style.setProperty('filter', 'none', 'important');
 		el.style.setProperty('user-select', 'auto', 'important');

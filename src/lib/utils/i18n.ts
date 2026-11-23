@@ -83,7 +83,7 @@ export function normalizeLocale(browserLocale: string): SupportedLocale {
 		return 'zh-CN';
 	}
 
-	const baseLocale = browserLocale.split(/[-_]/, 1)[0];
+	const baseLocale = lowerLocale.split(/[-_]/, 1)[0];
 	if (SUPPORTED_LOCALES.includes(baseLocale as SupportedLocale)) {
 		return baseLocale as SupportedLocale;
 	}
@@ -131,8 +131,11 @@ export async function loadLocaleMessages(locale: SupportedLocale): Promise<Recor
 // Simple translation function for non-Svelte contexts
 let cachedMessages: Record<string, string> | null = null;
 let cachedLocale: string | null = null;
+let cachedEnglish: Record<string, string> | null = null;
 
-// Returns the key itself when the message is missing so the UI never shows undefined
+// Returns the key itself when the message is missing so the UI never shows undefined.
+// Empty or missing entries fall back to English, matching svelte-i18n's behaviour:
+// catalogs carry `""` for keys that are still untranslated.
 export async function t(key: string, params?: Record<string, string | number>): Promise<string> {
 	const locale = await getCurrentLocale();
 
@@ -141,7 +144,12 @@ export async function t(key: string, params?: Record<string, string | number>): 
 		cachedLocale = locale;
 	}
 
-	let message = cachedMessages[key] ?? key;
+	let message = cachedMessages[key];
+	if (!message && locale !== 'en') {
+		cachedEnglish ??= await loadLocaleMessages('en');
+		message = cachedEnglish[key];
+	}
+	message ??= key;
 
 	if (params) {
 		for (const [paramKey, value] of Object.entries(params)) {
@@ -155,4 +163,5 @@ export async function t(key: string, params?: Record<string, string | number>): 
 subscribeStorageKey<string>('sync', SETTINGS_KEYS.LANGUAGE_OVERRIDE, () => {
 	cachedMessages = null;
 	cachedLocale = null;
+	cachedEnglish = null;
 });

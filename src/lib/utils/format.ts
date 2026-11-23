@@ -13,6 +13,8 @@ export function formatNumber(num: number | undefined): string {
 export function formatCompact(num: number | undefined): string {
 	if (num === undefined || Number.isNaN(num)) return '—';
 	if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+	// 999_999 rounds to 1000K, which never reads as a million.
+	if (num >= 999_500) return `${(num / 1_000_000).toFixed(1)}M`;
 	if (num >= 10_000) return `${String(Math.round(num / 1000))}K`;
 	if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
 	return num.toString();

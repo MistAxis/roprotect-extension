@@ -274,6 +274,27 @@
 		}
 	}
 
+	// Roving-tabindex keyboard support: the inactive tab is removed from the tab
+	// order, so without arrow keys it could never be focused.
+	function handleTablistKeydown(event: KeyboardEvent) {
+		const handled = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+		if (!handled.includes(event.key)) return;
+		event.preventDefault();
+
+		let next: ViewTab;
+		if (event.key === 'Home') {
+			next = 'by-role';
+		} else if (event.key === 'End') {
+			next = 'tracked';
+		} else {
+			next = activeTab === 'by-role' ? 'tracked' : 'by-role';
+		}
+
+		handleTabChange(next);
+		const selector = next === 'by-role' ? '#tab-by-role' : '#tab-tracked';
+		document.querySelector<HTMLButtonElement>(selector)?.focus();
+	}
+
 	// A newer call discards any in-flight load before it can update state
 	async function loadTrackedUsers(cursor?: string | null) {
 		const requestId = ++trackedRequestId;
@@ -623,7 +644,9 @@
 		const currentRequestsNeeded = Math.max(0, targetPage - cursorCache.length);
 		const oppositeRequestsNeeded = totalPages - targetPage + 1;
 		const oppositeOrder: SortOrder = currentSortOrder === 'Desc' ? 'Asc' : 'Desc';
-		const oppositeLabel = oppositeOrder === 'Asc' ? 'Oldest' : 'Newest';
+		const oppositeLabel = $_(
+			oppositeOrder === 'Asc' ? 'group_members_sort_oldest' : 'group_members_sort_newest'
+		);
 
 		// Check if switching direction would be more efficient
 		if (currentRequestsNeeded > 1 && oppositeRequestsNeeded < currentRequestsNeeded) {
@@ -747,7 +770,7 @@
 <div bind:this={contentWrapper} class="group-members-section">
 	<div class="group-members-header">
 		<h2 class="group-members-title">{$_('group_members_title')}</h2>
-		<div class="group-members-tabs" role="tablist">
+		<div class="group-members-tabs" onkeydown={handleTablistKeydown} role="tablist" tabindex="-1">
 			<button
 				id="tab-by-role"
 				class="group-members-tab"

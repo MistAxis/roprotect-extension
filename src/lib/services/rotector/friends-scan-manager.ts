@@ -12,7 +12,7 @@ import type { UserStatus } from '../../types/api';
 import type { CombinedStatus, CustomApiResult } from '../../types/custom-api';
 import { isAbortError } from '../../utils/abort';
 import { logger } from '../../utils/logging/logger';
-import type { ScanCategory } from '../../utils/status/scan-category';
+import { combinedResultToCategory, type ScanCategory } from '../../utils/status/scan-category';
 import { getStorage, removeStorage, setStorage, subscribeStorageKey } from '../../utils/storage';
 import {
 	scanFriendsForUser,
@@ -607,6 +607,53 @@ async function initializeSession(target: ScanSession): Promise<void> {
 		startHeartbeat(target);
 		void runScan(target, null);
 	}
+}
+
+/**
+ * Carry a PASC save/refresh made in a friend's tooltip into the shared scan
+ * session: the live store is updated by the caller, and this keeps the bucket
+ * (plus the summary counts) used for resuming/persisting in sync so a later
+ * page or tab does not restore the verdict the record had before the edit.
+ */
+export function applyFriendScanStatusUpdate(
+	userId: string,
+	friendId: string,
+	combined: CombinedStatus<UserStatus>
+): void {
+	const target = session;
+	if (target?.userId !== userId) return;
+
+	const previous = target.buckets.get(friendId);
+	if (!previous) return;
+
+	const bucket = combinedResultToCategory(combined);
+	target.statuses.set(friendId, combined);
+	target.buckets.set(friendId, bucket);
+
+	const counts = new Map(target.state.counts);
+	const bump = (category: ScanCategory, delta: number) => {
+		const next = (counts.get(category) ?? 0) + delta;
+		if (next > 0) {
+			counts.set(category, next);
+		} else {
+			counts.delete(category);
+		}
+	};
+	if (previous.category) bump(previous.category, -1);
+	// 'integration' overlaps the severity buckets, so a friend contributes to it
+	// separately from its own category.
+	if (previous.fromIntegration) bump('integration', -1);
+	if (bucket.category) bump(bucket.category, 1);
+	if (bucket.fromIntegration) bump('integration', 1);
+
+	// Replace the map rather than mutating it: the panel's derived counts only
+	// recompute when the Map identity changes.
+	target.state = { ...target.state, counts };
+	publish(target);
+
+	// Also refreshes the store's cached category through recordFriendScanResult.
+	recordFriendScanResult(target.userId, friendId, bucket.category, combined);
+	schedulePersist(target);
 }
 
 /**

@@ -19,7 +19,7 @@ export function getLogSource(): LogSource {
 // carry search terms, ids and session tokens) and values under credential-ish
 // keys never leave the extension.
 const SENSITIVE_KEY_PATTERN =
-	/api[-_]?key|token|passw|secret|authorization|cookie|session|captcha|fingerprint|installation/i;
+	/(?:api|quarry|access|private)[-_]?key|token|passw|secret|authorization|cookie|session|captcha|fingerprint|installation/i;
 
 const ABSOLUTE_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 
@@ -33,17 +33,22 @@ export function redactUrlForLog(value: string): string {
 	}
 }
 
-function normalizeForClone(value: unknown, seen: WeakSet<object>): unknown {
-	if (value === null || value === undefined) return value;
-	if (typeof value === 'function') return '[Function]';
-	if (typeof value === 'symbol') return value.toString();
-	if (typeof value === 'bigint') return value.toString();
-	if (typeof value === 'string') return redactUrlForLog(value);
-	if (typeof value !== 'object') return value;
+const NOT_HANDLED = Symbol('not-handled');
 
-	if (seen.has(value)) return '[Circular]';
-	seen.add(value);
-
+// Built-ins that JSON.stringify would otherwise flatten to `{}` (Date/Map/Set/
+// RegExp) or that are not clone-safe (DOM nodes). Split out of the main walk so
+// neither function trips the complexity budget.
+function normalizeSpecialObject(value: object, seen: WeakSet<object>): unknown {
+	if (value instanceof Date) return value.toISOString();
+	if (value instanceof RegExp) return value.toString();
+	if (value instanceof Set) {
+		return [...value].map((entry) => normalizeForClone(entry, seen));
+	}
+	if (value instanceof Map) {
+		return Object.fromEntries(
+			[...value].map(([key, entry]) => [String(key), normalizeForClone(entry, seen)])
+		);
+	}
 	if (value instanceof Error) {
 		const out: Record<string, unknown> = {
 			name: value.name,
@@ -59,18 +64,42 @@ function normalizeForClone(value: unknown, seen: WeakSet<object>): unknown {
 	if (typeof Node !== 'undefined' && value instanceof Node) {
 		return `[Node: ${value.nodeName}]`;
 	}
-	if (Array.isArray(value)) {
-		return value.map((v) => normalizeForClone(v, seen));
-	}
+	return NOT_HANDLED;
+}
 
-	const out: Record<string, unknown> = {};
-	for (const [k, v] of Object.entries(value)) {
-		out[k] =
-			SENSITIVE_KEY_PATTERN.test(k) && v !== null && v !== undefined
-				? '[redacted]'
-				: normalizeForClone(v, seen);
+function normalizeForClone(value: unknown, seen: WeakSet<object>): unknown {
+	if (value === null || value === undefined) return value;
+	if (typeof value === 'function') return '[Function]';
+	if (typeof value === 'symbol') return value.toString();
+	if (typeof value === 'bigint') return value.toString();
+	if (typeof value === 'string') return redactUrlForLog(value);
+	if (typeof value !== 'object') return value;
+
+	if (seen.has(value)) return '[Circular]';
+	// `seen` is a recursion stack, not a visited set: removing the object on the
+	// way out keeps two references to the same (acyclic) object from being
+	// mislabelled as a cycle.
+	seen.add(value);
+
+	try {
+		const special = normalizeSpecialObject(value, seen);
+		if (special !== NOT_HANDLED) return special;
+
+		if (Array.isArray(value)) {
+			return value.map((v) => normalizeForClone(v, seen));
+		}
+
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(value)) {
+			out[k] =
+				SENSITIVE_KEY_PATTERN.test(k) && v !== null && v !== undefined
+					? '[redacted]'
+					: normalizeForClone(v, seen);
+		}
+		return out;
+	} finally {
+		seen.delete(value);
 	}
-	return out;
 }
 
 // Same redaction pass used at write time, exposed for code that formats stored

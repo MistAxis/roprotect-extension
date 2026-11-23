@@ -16,8 +16,17 @@
 
 	let currentStep = $state<OnboardingStep>(isOnboardingReplay() ? 'guide' : 'welcome');
 
+	// Explicit "skip setup" from the welcome step: complete onboarding with the
+	// adult preset, which is the current default configuration.
 	async function handleSkip() {
 		await applyAgePreset(AGE_PRESETS.ADULT);
+		await completeOnboarding();
+	}
+
+	// Closing a later step (X/Escape/backdrop) is a dismissal, not a choice:
+	// completing must not rewrite blur/cipher preferences the user already has
+	// (a replay always starts at the guide step).
+	async function handleDismiss() {
 		await completeOnboarding();
 	}
 </script>
@@ -29,11 +38,11 @@
 		onSkip={handleSkip}
 	/>
 {:else if currentStep === 'language'}
-	<LanguageModal onContinue={() => (currentStep = 'preset')} onDismiss={handleSkip} />
+	<LanguageModal onContinue={() => (currentStep = 'preset')} onDismiss={handleDismiss} />
 {:else if currentStep === 'preset'}
-	<PresetModal onContinue={() => (currentStep = 'guide')} onDismiss={handleSkip} />
+	<PresetModal onContinue={() => (currentStep = 'guide')} onDismiss={handleDismiss} />
 {:else if currentStep === 'guide'}
-	<GuideModal onDismiss={handleSkip} onFinish={() => (currentStep = 'finish')} />
+	<GuideModal onDismiss={handleDismiss} onFinish={() => (currentStep = 'finish')} />
 {:else if currentStep === 'finish'}
 	<FinishModal onFinish={completeOnboarding} />
 {/if}

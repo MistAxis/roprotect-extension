@@ -6,7 +6,7 @@ import type { LogEntry } from '@/lib/types/developer-logs';
 import { SETTINGS_KEYS } from '@/lib/types/settings';
 import { redactUrlForLog, sanitizeLogValue } from '@/lib/utils/logging/log-source';
 
-const SENSITIVE_SETTING_KEYS = new Set<string>([SETTINGS_KEYS.API_KEY]);
+const SENSITIVE_SETTING_KEYS = new Set<string>([SETTINGS_KEYS.API_KEY, SETTINGS_KEYS.QUARRY_KEY]);
 
 interface SystemInfo {
 	extensionVersion: string;
@@ -127,5 +127,7 @@ export function downloadDebugLogs(): void {
 	document.body.append(a);
 	a.click();
 	a.remove();
-	URL.revokeObjectURL(url);
+	// Firefox can abort the download if the blob URL is revoked before the
+	// navigation consumes it, so release it on the next task.
+	setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

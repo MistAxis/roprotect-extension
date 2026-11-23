@@ -20,6 +20,7 @@
 	let { userId, userStatus }: Props = $props();
 
 	let reportHelper: { element: HTMLElement; cleanup: () => void } | null = null;
+	let destroyed = false;
 	let pendingObserver: MutationObserver | null = null;
 	let pendingTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -96,15 +97,25 @@
 		}
 	}
 
+	// Read through a function: the earlier `destroyed` guard narrows the flag, and
+	// the lint analyzer does not know the await can let cleanup run.
+	function isDestroyed(): boolean {
+		return destroyed;
+	}
+
 	async function mountReportHelper(): Promise<void> {
 		const result = await waitForElement(REPORT_PAGE_SELECTORS.INNER_FORM);
-		if (!result.success) return;
+		if (!result.success || isDestroyed()) return;
 
 		const container = document.createElement('div');
 		container.className = COMPONENT_CLASSES.REPORT_HELPER;
 		result.element.insertBefore(container, result.element.firstChild);
 
 		const { mount, unmount } = await import('svelte');
+		if (isDestroyed()) {
+			container.remove();
+			return;
+		}
 		const component = mount(ReportHelper, {
 			target: container,
 			props: {
@@ -192,8 +203,10 @@
 	}
 
 	function cleanup() {
+		destroyed = true;
 		clearTimeout(pendingTimeout);
 		pendingObserver?.disconnect();
 		reportHelper?.cleanup();
+		reportHelper = null;
 	}
 </script>

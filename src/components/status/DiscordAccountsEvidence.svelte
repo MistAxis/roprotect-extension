@@ -192,6 +192,14 @@
 		const userId = robloxUserId;
 		const loadId = ++latestDiscordLoadId;
 
+		// The tooltip instance is reused for the next user, so a failed lookup must
+		// not leave the previous user's linked accounts on screen under the new id.
+		discordAccounts = [];
+		altAccounts = [];
+		quarryServers = {};
+		expandedAccounts.clear();
+		isLoading = true;
+
 		async function fetchDiscordData() {
 			try {
 				isLoading = true;

@@ -70,6 +70,8 @@ export interface Settings {
 	[SETTINGS_KEYS.CHANGELOG_SECTION_EXPANDED]: boolean;
 	[SETTINGS_KEYS.CHANGELOG_LAST_SEEN_VERSION]: string;
 	[SETTINGS_KEYS.CHANGELOG_MODAL_DISABLED]: boolean;
+	// Legacy/inert: custom APIs live in `local` storage, not the sync settings blob.
+	// The key stays declared so SETTINGS_KEYS remains a complete index of Settings.
 	[SETTINGS_KEYS.CUSTOM_APIS]?: string;
 	[SETTINGS_KEYS.LAST_SELECTED_CUSTOM_API_TAB]?: string;
 	[SETTINGS_KEYS.TRANSLATE_VIOLATIONS_ENABLED]: boolean;

@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
 import type { UserStatus } from '../types/api';
 import type { CombinedStatus } from '../types/custom-api';
-import type { ScanCategory } from '../utils/status/scan-category';
+import { combinedResultToCategory, type ScanCategory } from '../utils/status/scan-category';
 import { withUpdatedProviderData } from '../utils/status/status-utils';
 
 // Live scan results for the friends page. The scan already queries every
@@ -105,11 +105,27 @@ export function recordFriendScanResult(
 
 // A PASC save/refresh inside the tooltip replaces the authoritative verdict for
 // the friend, so keep the cached combined status in sync with the indicator.
-export function updateFriendScanStatus(friendId: string, next: UserStatus): void {
+// The bucket has to move too: the tag filters and their counts read
+// `categories`, so leaving it on the previous verdict would keep a reopened case
+// under the old chip.
+export function updateFriendScanStatus(
+	friendId: string,
+	next: UserStatus
+): CombinedStatus<UserStatus> | null {
 	const current = statuses.get(friendId);
-	if (!current) return;
-	statuses.set(friendId, withUpdatedProviderData(current, 'system-pasc', next));
+	if (!current) return null;
+
+	const combined = withUpdatedProviderData(current, 'system-pasc', next);
+	const { category } = combinedResultToCategory(combined);
+
+	statuses.set(friendId, combined);
+	if (category === null) {
+		categories.delete(friendId);
+	} else {
+		categories.set(friendId, category);
+	}
 	schedulePublish();
+	return combined;
 }
 
 export function finishFriendsScan(nextUserId: string): void {

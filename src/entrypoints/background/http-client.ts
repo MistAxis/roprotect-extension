@@ -206,6 +206,62 @@ function finalizePayload<T>(
 	return parse ? parse(payload) : (payload as T);
 }
 
+// The server answered, so the body/contract is wrong rather than the transport.
+// Tag the error with a non-retryable status: retrying a deterministic parse
+// failure cannot succeed and would repeat non-idempotent writes (a review
+// request POST, for example). Most parsers throw a plain TypeError, which the
+// generic normalizer would otherwise classify as "offline".
+function throwNonRetryableParseError(error: unknown): never {
+	const wrapped = asApiError(error);
+	wrapped.status ??= 422;
+	throw wrapped;
+}
+
+// Parse hooks run after a successful HTTP response. Wrapping them keeps the
+// non-retryable classification in one place instead of nesting in the request
+// loop (which also keeps that loop's complexity bounded).
+function parseOrThrow<T>(parseFn: () => T): T {
+	try {
+		return parseFn();
+	} catch (error) {
+		throwNonRetryableParseError(error);
+	}
+}
+
+async function parseAsyncOrThrow<T>(parseFn: () => Promise<T>): Promise<T> {
+	try {
+		return await parseFn();
+	} catch (error) {
+		throwNonRetryableParseError(error);
+	}
+}
+
+// Reads a text body while enforcing the cap during the read, so a chunked
+// response cannot buffer an unbounded document before the size check runs.
+async function readTextWithLimit(response: Response, limit: number): Promise<string> {
+	if (!response.body) return '';
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let text = '';
+
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			text += decoder.decode(value, { stream: true });
+			if (text.length > limit) {
+				await reader.cancel().catch(() => {});
+				throw new Error('Response body is too large');
+			}
+		}
+		text += decoder.decode();
+		return text;
+	} finally {
+		reader.releaseLock();
+	}
+}
+
 async function handleRotectorForbidden(error: ApiError, endpoint: string): Promise<void> {
 	const isMembershipEndpoint = endpoint.startsWith('/v1/extension/membership/');
 	if (error.status !== 403 || isMembershipEndpoint) return;
@@ -319,7 +375,7 @@ export async function makeHttpRequest<T = unknown>(
 
 			if (parseResponse) {
 				logger.debug('[http-client] Using parseResponse handler');
-				const result = await parseResponse(response);
+				const result = await parseAsyncOrThrow(() => parseResponse(response));
 				logger.apiCall(method, url, response.status, totalDuration);
 				return result;
 			}
@@ -331,13 +387,10 @@ export async function makeHttpRequest<T = unknown>(
 
 			logger.debug('[http-client] Parsing JSON response');
 			const jsonStartTime = Date.now();
-			// Cap the body before parsing: a hostile provider or a compromised
+			// Cap the body while reading it: a hostile provider or a compromised
 			// backend could otherwise stream an unbounded JSON document into the
 			// background worker's heap.
-			const bodyText = await response.text();
-			if (bodyText.length > MAX_JSON_RESPONSE_CHARS) {
-				throw new Error('Response body is too large');
-			}
+			const bodyText = await readTextWithLimit(response, MAX_JSON_RESPONSE_CHARS);
 			let data: unknown;
 			try {
 				data = JSON.parse(bodyText) as unknown;
@@ -357,7 +410,7 @@ export async function makeHttpRequest<T = unknown>(
 			await maybeWaitForRateLimit(response.headers);
 
 			logger.debug('[http-client] Finalizing payload');
-			return finalizePayload(data, rawResponse, parse);
+			return parseOrThrow(() => finalizePayload(data, rawResponse, parse));
 		} catch (error) {
 			lastError = normalizeFetchError(error, timeout);
 			const lastErrorRecord = lastError as Record<string, unknown> | Error;

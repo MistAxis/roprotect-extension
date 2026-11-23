@@ -2,6 +2,14 @@
    POPUP BASE STYLES
    ================================= */
 
+/* Popup/options are regular pages, so they need the reset the content script
+   scopes to its shadow root. */
+*,
+::before,
+::after {
+	box-sizing: border-box;
+}
+
 /* Apply scrollbar styling to popup body */
 html,
 body {

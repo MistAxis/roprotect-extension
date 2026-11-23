@@ -68,26 +68,67 @@ export function sanitizeUrl(url: string): string | null {
 
 // Loopback, link-local, and RFC 1918 / RFC 4193 hostnames. Used to keep
 // server-supplied image URLs from being pointed at the local network.
+const PRIVATE_IPV4_PATTERNS = [
+	/^0\./,
+	/^10\./,
+	/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
+	/^127\./,
+	/^169\.254\./,
+	/^172\.(1[6-9]|2\d|3[01])\./,
+	/^192\.0\.[02]\./,
+	/^192\.168\./,
+	/^198\.1[89]\./
+];
+
 const PRIVATE_HOSTNAME_PATTERNS = [
 	/^localhost$/,
 	/\.localhost$/,
 	/\.local$/,
 	/\.internal$/,
 	/\.home\.arpa$/,
-	/^0\./,
-	/^10\./,
-	/^127\./,
-	/^169\.254\./,
-	/^172\.(1[6-9]|2\d|3[01])\./,
-	/^192\.168\./,
 	/^::1$/,
+	// Unspecified address: connecting to [::] reaches loopback on most stacks.
+	/^::$/,
+	// Unique-local fc00::/7 and link-local fe80::/10.
 	/^f[cd][0-9a-f]{2}:/,
-	/^fe80:/
+	/^fe[89ab][0-9a-f]?:/
 ];
+
+// IPv4 addresses embedded in an IPv6 address: IPv4-mapped (::ffff:) and the
+// NAT64 well-known/local-use prefixes, which a resolver can turn into a
+// connection to the embedded IPv4 destination. WHATWG URL parsing rewrites the
+// dotted form to two hex groups, so both shapes have to be handled.
+const IPV4_EMBEDDING_PREFIXES = ['::ffff:', '64:ff9b::', '64:ff9b:1::'];
+
+function embeddedIpv4(host: string): string | null {
+	for (const prefix of IPV4_EMBEDDING_PREFIXES) {
+		if (!host.startsWith(prefix)) continue;
+		const rest = host.slice(prefix.length);
+
+		const dotted = /^(\d{1,3}(?:\.\d{1,3}){3})$/.exec(rest);
+		if (dotted?.[1]) return dotted[1];
+
+		const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(rest);
+		if (hex?.[1] && hex[2] !== undefined) {
+			const high = Number.parseInt(hex[1], 16);
+			const low = Number.parseInt(hex[2], 16);
+			return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+		}
+	}
+	return null;
+}
+
+function isPrivateIpv4(host: string): boolean {
+	return PRIVATE_IPV4_PATTERNS.some((pattern) => pattern.test(host));
+}
 
 export function isPrivateHostname(hostname: string): boolean {
 	const host = hostname.toLowerCase().replaceAll(/^\[|\]$/g, '');
-	return PRIVATE_HOSTNAME_PATTERNS.some((pattern) => pattern.test(host));
+
+	const embedded = embeddedIpv4(host);
+	if (embedded !== null) return isPrivateIpv4(embedded);
+
+	return isPrivateIpv4(host) || PRIVATE_HOSTNAME_PATTERNS.some((pattern) => pattern.test(host));
 }
 
 // Returns the URL only when it is a public HTTPS URL. Used before the extension

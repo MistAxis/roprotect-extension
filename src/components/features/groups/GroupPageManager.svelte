@@ -37,6 +37,8 @@
 	let groupStatus = $state<CombinedStatus<GroupStatus> | null>(null);
 
 	let ownerComponent: Record<string, unknown> | null = null;
+	let ownerContainer: HTMLElement | null = null;
+	let destroyed = false;
 
 	$effect(() => {
 		if (!querySubscription) return;
@@ -56,8 +58,10 @@
 		try {
 			const ownerResult = await waitForElement(GROUP_HEADER_SELECTORS.OWNER_NAME);
 
-			if (!ownerResult.success) {
-				logger.warn('Could not find group owner element for status indicator');
+			if (!ownerResult.success || destroyed) {
+				if (!ownerResult.success) {
+					logger.warn('Could not find group owner element for status indicator');
+				}
 				return;
 			}
 
@@ -78,6 +82,7 @@
 		const container = document.createElement('span');
 		container.className = COMPONENT_CLASSES.GROUP_STATUS_CONTAINER;
 		ownerElement.parentNode?.insertBefore(container, ownerElement.nextSibling);
+		ownerContainer = container;
 
 		ownerComponent = mount(StatusIndicator, {
 			target: container,
@@ -94,7 +99,11 @@
 	}
 
 	function cleanup() {
+		destroyed = true;
 		if (ownerComponent) void unmount(ownerComponent);
+		ownerComponent = null;
+		ownerContainer?.remove();
+		ownerContainer = null;
 	}
 </script>
 

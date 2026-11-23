@@ -337,7 +337,7 @@
 
 			<section id="section-schema" class="docs-section">
 				<h4 class="docs-section-title">{$_('custom_api_docs_section_schema')}</h4>
-				<p class="docs-note">{$_('custom_api_docs_note_wrapper')}</p>
+				<p class="docs-note">{$_('custom_api_docs_note_wrapper', { values: {} })}</p>
 
 				<h5 class="docs-subtitle">{$_('custom_api_docs_subtitle_required_fields')}</h5>
 				<ul class="docs-list">

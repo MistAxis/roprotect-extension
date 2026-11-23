@@ -1,3 +1,17 @@
+import { get } from 'svelte/store';
+import { locale } from 'svelte-i18n';
+
+// The Intl locale for user-facing dates/times. Follows the extension's selected
+// locale (svelte-i18n) instead of the Roblox page or the browser UI language,
+// and falls back to the runtime default when i18n has not initialised yet.
+function intlLocale(): string | undefined {
+	try {
+		return get(locale) ?? undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 // Timestamp is seconds, returns whole calendar days using local-midnight boundaries
 export function getDaysSinceTimestamp(timestamp: number): number {
 	if (!timestamp) return 0;
@@ -7,11 +21,12 @@ export function getDaysSinceTimestamp(timestamp: number): number {
 
 	const now = new Date();
 
-	const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-	const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	// Compare the calendar dates through UTC. Subtracting local midnights and
+	// dividing by 24h undercounts by one on DST transition days.
+	const dateOnly = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+	const nowOnly = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
 
-	const diffTime = nowOnly.getTime() - dateOnly.getTime();
-	return Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+	return Math.max(0, Math.round((nowOnly - dateOnly) / (1000 * 60 * 60 * 24)));
 }
 
 // Input is in seconds
@@ -21,16 +36,22 @@ export function formatTimestamp(timestamp: number): string {
 
 	const now = new Date();
 	const diffMs = now.getTime() - date.getTime();
+	// `narrow` keeps English at the existing "3d ago"/"5m ago" length while
+	// rendering a proper localized phrase for other locales.
+	const relative = new Intl.RelativeTimeFormat(intlLocale(), {
+		numeric: 'auto',
+		style: 'narrow'
+	});
 
-	if (diffMs < 60_000) return 'just now';
+	if (diffMs < 60_000) return relative.format(0, 'second');
 
 	const diffMinutes = Math.floor(diffMs / 60_000);
 	const diffHours = Math.floor(diffMinutes / 60);
 	const diffDays = Math.floor(diffHours / 24);
 
-	if (diffMinutes < 60) return `${String(diffMinutes)}m ago`;
-	if (diffHours < 24) return `${String(diffHours)}h ago`;
-	if (diffDays < 7) return `${String(diffDays)}d ago`;
+	if (diffMinutes < 60) return relative.format(-diffMinutes, 'minute');
+	if (diffHours < 24) return relative.format(-diffHours, 'hour');
+	if (diffDays < 7) return relative.format(-diffDays, 'day');
 	return formatShortDate(timestamp) ?? 'unknown time';
 }
 
@@ -64,7 +85,7 @@ export function formatShortDate(timestamp: number | null): string | null {
 	const dateYear = date.getFullYear();
 	const currentYear = now.getFullYear();
 
-	return date.toLocaleDateString('en-US', {
+	return date.toLocaleDateString(intlLocale(), {
 		month: 'short',
 		day: 'numeric',
 		year: dateYear === currentYear ? undefined : 'numeric'
@@ -75,7 +96,7 @@ export function formatExactTimestamp(timestamp: number): string {
 	const date = new Date(timestamp * 1000);
 	if (Number.isNaN(date.getTime())) return 'unknown time';
 
-	return date.toLocaleString('en-US', {
+	return date.toLocaleString(intlLocale(), {
 		month: 'short',
 		day: 'numeric',
 		year: 'numeric',

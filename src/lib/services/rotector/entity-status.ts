@@ -42,14 +42,20 @@ interface PendingEntry<T> {
 class EntityStatusService<T extends EntityStatus> {
 	private readonly cache = new Map<string, CacheEntry<T>>();
 	private readonly pendingRequests = new Map<string, PendingEntry<T>>();
+	// Bumped by clearCache() so requests started under a previous viewer cannot
+	// write their results into the new viewer's cache.
+	private cacheGeneration = 0;
 	private readonly entityType: 'user' | 'group';
 	private readonly fetchSingle: (id: string, options?: GetStatusOptions) => Promise<T>;
-	private readonly fetchMultiple: (ids: string[], lookupContext?: string) => Promise<T[]>;
+	private readonly fetchMultiple: (
+		ids: string[],
+		lookupContext?: string
+	) => Promise<Array<T | null>>;
 
 	constructor(
 		entityType: 'user' | 'group',
 		fetchSingle: (id: string, options?: GetStatusOptions) => Promise<T>,
-		fetchMultiple: (ids: string[], lookupContext?: string) => Promise<T[]>
+		fetchMultiple: (ids: string[], lookupContext?: string) => Promise<Array<T | null>>
 	) {
 		this.entityType = entityType;
 		this.fetchSingle = fetchSingle;
@@ -248,11 +254,13 @@ class EntityStatusService<T extends EntityStatus> {
 			}
 
 			for (const status of batchStatuses) {
-				if (status.id) {
-					const entityId = status.id.toString();
-					this.setCachedStatus(entityId, status);
-					results.set(entityId, status);
-				}
+				// A batch can legitimately carry nulls: the group endpoint reports
+				// untracked groups (and an unavailable provider) that way. Skipping them
+				// keeps the rest of the chunk instead of throwing and dropping all of it.
+				if (!status?.id) continue;
+				const entityId = status.id.toString();
+				this.setCachedStatus(entityId, status);
+				results.set(entityId, status);
 			}
 		} catch (error) {
 			if (error instanceof DOMException && error.name === 'AbortError') {
@@ -278,6 +286,7 @@ class EntityStatusService<T extends EntityStatus> {
 	// viewer's API key changes: cached provider data belongs to the previous
 	// key and may carry clearance-gated fields the new viewer cannot see.
 	public clearCache(): void {
+		this.cacheGeneration += 1;
 		this.cache.clear();
 		for (const entry of this.pendingRequests.values()) {
 			entry.controller.abort();
@@ -287,16 +296,27 @@ class EntityStatusService<T extends EntityStatus> {
 
 	// Snapshots and resolves the queued waiters from one shared fetch so late aborts don't reject siblings
 	private async runFetch(entityId: string, entry: PendingEntry<T>): Promise<void> {
+		// clearCache() (API-key change) invalidates this request: its result belongs
+		// to the previous viewer and must not repopulate the cache or evict a newer
+		// pending entry that started after the clear.
+		const generation = this.cacheGeneration;
+
 		try {
 			const status = await this.fetchSingle(entityId, { signal: entry.controller.signal });
 			const snapshot = [...entry.queue];
-			this.pendingRequests.delete(entityId);
-			this.setCachedStatus(entityId, status);
+			if (generation === this.cacheGeneration) {
+				if (this.pendingRequests.get(entityId) === entry) {
+					this.pendingRequests.delete(entityId);
+				}
+				this.setCachedStatus(entityId, status);
+			}
 			for (const request of snapshot) request.resolve(status);
 		} catch (error) {
 			const err = asApiError(error);
 			const snapshot = [...entry.queue];
-			this.pendingRequests.delete(entityId);
+			if (generation === this.cacheGeneration && this.pendingRequests.get(entityId) === entry) {
+				this.pendingRequests.delete(entityId);
+			}
 			for (const request of snapshot) request.reject(err);
 		}
 	}

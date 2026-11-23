@@ -75,11 +75,14 @@ export async function checkGroupStatus(
 		if (isScsnNoRecord(status)) return null;
 		return status;
 	} catch (error) {
-		logger.warn('[core] SCSN group lookup unavailable, returning no status', {
+		// Report the failure instead of returning null: null means "group not
+		// tracked" and renders as a green "Not Flagged", which would turn a
+		// provider outage into a clean verdict.
+		logger.warn('[core] SCSN group lookup failed', {
 			groupId: sanitizedGroupId,
 			error
 		});
-		return null;
+		throw error;
 	}
 }
 

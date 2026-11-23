@@ -265,6 +265,14 @@
 		}, CLOSE_DELAY);
 	}
 
+	// Tabbing from the trigger into the portalled panel fires blur before focus
+	// lands in the panel. Closing then would make the panel keyboard-unreachable.
+	function handleBlur(event: FocusEvent) {
+		const next = event.relatedTarget;
+		if (next instanceof Node && (panel?.contains(next) || root?.contains(next))) return;
+		scheduleClose();
+	}
+
 	function handleEnter() {
 		hovering = true;
 		cancelClose();
@@ -299,7 +307,7 @@
 		aria-controls="rotector-friends-scan-panel"
 		aria-expanded={open}
 		aria-label={$_('friends_scan_title')}
-		onblur={scheduleClose}
+		onblur={handleBlur}
 		onclick={handleEnter}
 		onfocus={handleEnter}
 		type="button"
@@ -331,7 +339,8 @@
 			aria-label={$_('friends_scan_title')}
 			onmouseenter={handleEnter}
 			onmouseleave={handleLeave}
-			role="tooltip"
+			role="dialog"
+			tabindex="-1"
 		>
 			<div class="rotector-friends-scan-panel-header">
 				<span class="rotector-friends-scan-panel-title">{$_('friends_scan_title')}</span>

@@ -47,6 +47,7 @@ export class Observer {
 	private readonly config: Required<ObserverConfig>;
 	private active = false;
 	private observer: MutationObserver | null = null;
+	private observedTarget: Element | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,6 +79,8 @@ export class Observer {
 		if (this.observer) {
 			this.observer.disconnect();
 			this.observer = null;
+			this.observedTarget = null;
+			unregisterObserver();
 			this.active = false;
 		}
 
@@ -105,6 +108,7 @@ export class Observer {
 			});
 
 			this.observer.observe(target, this.config.observerOptions);
+			this.observedTarget = target;
 			this.active = true;
 
 			registerObserver();
@@ -141,6 +145,7 @@ export class Observer {
 			unregisterObserver();
 			this.observer.disconnect();
 			this.observer = null;
+			this.observedTarget = null;
 		}
 
 		if (this.reconnectTimer) {
@@ -258,6 +263,15 @@ export class Observer {
 		const target = this.getTarget();
 		if (!target) {
 			logger.warn(`${this.name} observer: Health check failed - target element lost`);
+			this.scheduleRestart();
+			return;
+		}
+
+		// The selector still matches, but Roblox can replace the container node.
+		// The observer stays bound to the detached node and stops firing, so a
+		// restart is required even though the query succeeded.
+		if (target !== this.observedTarget || !this.observedTarget.isConnected) {
+			logger.debug(`${this.name} observer: Target element was replaced, restarting`);
 			this.scheduleRestart();
 		}
 	}

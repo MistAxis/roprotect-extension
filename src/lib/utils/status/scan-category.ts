@@ -4,6 +4,7 @@ import { STATUS } from '../../types/constants';
 import type { StatusIconName } from '../icon-mapping';
 import {
 	calculateStatusBadges,
+	isPascRecordPresent,
 	pickHighestSeverityCustomFlag,
 	pickHighestSeveritySystemResult
 } from './status-utils';
@@ -161,6 +162,14 @@ export function combinedResultToCategory(combined: CombinedStatus<UserStatus>): 
 
 	const isProcessedQueue = data.flagType === STATUS.FLAGS.QUEUED && data.processed === true;
 	const category = isProcessedQueue ? 'safe' : flagToCategory(data.flagType);
+
+	// A present PASC record replaces every other source, including partner
+	// detections (it can downgrade an entity to SAFE). Keeping the custom bucket
+	// would contradict `isFlagged`, which ignores them in this case.
+	const pasc = combined.get('system-pasc');
+	if (pasc && isPascRecordPresent(pasc) && pasc.data?.flagType !== STATUS.FLAGS.UNKNOWN) {
+		return { category, fromIntegration: false };
+	}
 
 	// 'safe' and 'outfit' are both non-flagged verdicts, so a partner's detection outranks
 	// them and inherits the severity it reported

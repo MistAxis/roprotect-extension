@@ -25,7 +25,10 @@ import {
 import { detectPageType } from '@/lib/utils/dom/page-detection';
 import { computeAndCacheDeviceFingerprint } from '@/lib/utils/device-fingerprint';
 import { metricsCollector } from '@/lib/utils/logging/metrics-collector';
-import { registerOverlayContainer } from '@/lib/utils/overlay-portal-registry';
+import {
+	registerOverlayContainer,
+	unregisterOverlayContainer
+} from '@/lib/utils/overlay-portal-registry';
 import OverlayRoot from '@/components/overlay/OverlayRoot.svelte';
 
 async function registerBuilderSans(): Promise<void> {
@@ -101,7 +104,7 @@ export default defineContentScript({
 			let reapplyNavigation: (() => void) | null = null;
 
 			// Reload custom APIs when API key changes (so new system APIs from whoami are loaded)
-			subscribeStorageKey<string>('sync', 'apiKey', async (newKey) => {
+			const unsubscribeApiKey = subscribeStorageKey<string>('sync', 'apiKey', async (newKey) => {
 				// A different key is a different viewer: drop cached verdicts,
 				// PASC clearance/case details, and linked Discord data before
 				// anything can be rendered under the new identity.
@@ -145,6 +148,11 @@ export default defineContentScript({
 			let overlayAttached = false;
 			let overlayLoading: Promise<void> | null = null;
 			let visualsActive = false;
+			// Whether the page the content script currently sits on is one the
+			// extension supports. Read after the overlay mount completes: a teardown
+			// can happen while the stylesheet fetch is still in flight, and mounting
+			// afterwards would put the overlay on an unsupported page.
+			let supportedPageActive = detectPageType(globalThis.location.href) !== null;
 			let activationEpoch = 0;
 			let telemetryStarted = false;
 			let currentUrl = globalThis.location.href;
@@ -222,6 +230,11 @@ export default defineContentScript({
 						ui.remove();
 						throw error;
 					}
+
+					// The page stopped being supported (or the tab tore down) while the
+					// overlay was loading. Remove it instead of leaving onboarding UI over
+					// a page the extension does not run on.
+					if (!supportedPageActive) teardownOverlay();
 				})().finally(() => {
 					overlayLoading = null;
 				});
@@ -234,6 +247,7 @@ export default defineContentScript({
 
 			function teardownOverlay(): void {
 				overlayAttached = false;
+				unregisterOverlayContainer();
 				const app = overlayApp;
 				overlayApp = null;
 				if (app) void unmount(app);
@@ -277,6 +291,7 @@ export default defineContentScript({
 			}
 
 			function deactivateVisuals(): void {
+				supportedPageActive = false;
 				deactivatePageFeatures();
 				teardownOverlay();
 				logger.debug('Visuals deactivated for unsupported page');
@@ -284,8 +299,10 @@ export default defineContentScript({
 
 			async function handleUrl(url: string): Promise<void> {
 				const token = ++navigationToken;
+				const pageType = detectPageType(url);
+				supportedPageActive = pageType !== null;
 
-				if (detectPageType(url) === null) {
+				if (pageType === null) {
 					deactivateVisuals();
 					await pageManager?.deactivate();
 					return;
@@ -294,12 +311,19 @@ export default defineContentScript({
 				// Supported page: the overlay is mounted even while the feature gate is
 				// closed, otherwise a fresh install (no API key) would never see
 				// onboarding or the key prompt.
+				//
+				// Blur is injected before the overlay's stylesheet fetch: an SPA jump
+				// from an unsupported page otherwise leaves names/avatars readable for
+				// the duration of that fetch. The startup path does the same.
+				if (get(extensionFeaturesEnabled)) injectBlurStyles();
 				const mounted = await ensureOverlay();
+				// A newer navigation owns the overlay now; its outcome decides whether the
+				// visuals stay up, so a stale failure must not tear them down.
+				if (token !== navigationToken) return;
 				if (!mounted) {
 					deactivateVisuals();
 					return;
 				}
-				if (token !== navigationToken) return;
 
 				// The gate is part of the URL contract: SPA navigation must not bypass
 				// onboarding/API-key state.
@@ -405,6 +429,7 @@ export default defineContentScript({
 				cleanedUp = true;
 				logger.debug('Content script cleanup on page unload');
 				removeNavigationListeners();
+				unsubscribeApiKey();
 				unsubscribeGate();
 				unsubscribeSettings();
 				deactivateVisuals();
@@ -413,10 +438,20 @@ export default defineContentScript({
 				themeManager.cleanup();
 			};
 
-			// pagehide fires on real unloads and bfcache eviction. `beforeunload` can
-			// be cancelled by the page, which would leave a live tab fully torn down.
-			globalThis.addEventListener('pagehide', cleanup, { once: true });
-			ctx.onInvalidated(cleanup);
+			// pagehide fires on real unloads and when the page enters the back/forward
+			// cache. A bfcache entry keeps this JS context alive and restores it without
+			// re-running main(), so tearing down on `persisted` would leave a restored
+			// tab with no overlay, controllers or navigation polling. `beforeunload`
+			// can be cancelled by the page, which would leave a live tab torn down.
+			const handlePageHide = (event: PageTransitionEvent): void => {
+				if (event.persisted) return;
+				cleanup();
+			};
+			globalThis.addEventListener('pagehide', handlePageHide);
+			ctx.onInvalidated(() => {
+				globalThis.removeEventListener('pagehide', handlePageHide);
+				cleanup();
+			});
 
 			logger.info('Rotector content script successfully initialized');
 		} catch (error) {

@@ -1,6 +1,7 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
 import '../../styles/index.css';
+import '../../styles/popup/base.css';
 import './app.css';
 import { themeManager } from '@/lib/utils/theme';
 import { initializeSettings } from '@/lib/stores/settings';

@@ -12,16 +12,16 @@ import { logger } from '../logging/logger';
 
 // URL pattern -> PageType lookup table consumed by detectPageType
 const PAGE_PATTERNS: ReadonlyArray<{ pattern: RegExp; type: PageType; hash?: string }> = [
-	{ pattern: /^\/(?:home)?$/, type: PAGE_TYPES.HOME },
+	{ pattern: /^\/(?:home\/?)?$/, type: PAGE_TYPES.HOME },
 	{
 		pattern: /\/users\/(?:\d+\/)?(?:friends|followers|following)/,
 		type: PAGE_TYPES.FRIENDS_LIST
 	},
 	{ pattern: /\/users\/\d+(?:\/profile)?/, type: PAGE_TYPES.PROFILE },
 	{ pattern: /\/search\/users/, type: PAGE_TYPES.SEARCH_USER },
-	{ pattern: /\/report-abuse\//, type: PAGE_TYPES.REPORT },
+	{ pattern: /\/report-abuse(?:\/|$)/, type: PAGE_TYPES.REPORT },
 	{
-		pattern: /^\/communities\/configure$/,
+		pattern: /^\/communities\/configure\/?$/,
 		type: PAGE_TYPES.GROUP_CONFIGURE_MEMBERS,
 		hash: '#!/members'
 	},
@@ -107,7 +107,11 @@ export function normalizePathname(pathname: string): string {
 	// Roblox locale prefixes are two letters (/es/, /de/), optionally with a region
 	// (/pt-br/, /zh-cn/), plus the three-letter Filipino prefix (/fil/). Missing
 	// `fil` left every /fil/ page unmatched by the anchored PAGE_PATTERNS.
-	return pathname.replace(/^\/(?:[a-z]{2}(?:-[a-z]{2})?|fil)\//, '/');
+	// A bare locale root is the localized home page (`roblox.com/pt-br`), which
+	// the browser may report without a trailing slash.
+	return pathname
+		.replace(/^\/(?:[a-z]{2}(?:-[a-z]{2})?|fil)\//, '/')
+		.replace(/^\/(?:[a-z]{2}(?:-[a-z]{2})?|fil)$/, '/');
 }
 
 // Walks up from the anchor to classify the surrounding card or page, falling back to URL match

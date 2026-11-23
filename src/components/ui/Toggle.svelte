@@ -5,10 +5,13 @@
 		checked: boolean;
 		disabled?: boolean;
 		loading?: boolean;
+		// The switch has no visible text of its own; without this, assistive tech
+		// announces every settings toggle as an unnamed "switch".
+		ariaLabel?: string;
 		onchange: (checked: boolean) => void;
 	}
 
-	let { checked, disabled = false, loading = false, onchange }: Props = $props();
+	let { checked, disabled = false, loading = false, ariaLabel, onchange }: Props = $props();
 
 	function handleChange(event: Event) {
 		if (!(event.target instanceof HTMLInputElement)) {
@@ -28,6 +31,7 @@
 	<input
 		class="peer size-0 opacity-0 focus:outline-none"
 		aria-checked={checked}
+		aria-label={ariaLabel}
 		{checked}
 		disabled={disabled || loading}
 		onchange={handleChange}

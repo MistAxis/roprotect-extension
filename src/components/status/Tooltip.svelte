@@ -1730,7 +1730,7 @@
 							<div class="translation-toggle-container">
 								<button
 									class="translation-toggle-button"
-									onmousedown={(e) => {
+									onclick={(e) => {
 										e.stopPropagation();
 										e.preventDefault();
 										translation.showTranslated = !translation.showTranslated;
@@ -1950,7 +1950,7 @@
 															</div>
 															<button
 																class="decoded-evidence-chip"
-																onmousedown={(e) => {
+																onclick={(e) => {
 																	e.stopPropagation();
 																	e.preventDefault();
 																	toggleOriginal(toggleKey);
@@ -2030,6 +2030,9 @@
 		aria-label={$_('tooltip_aria_close')}
 		onclick={handleOverlayClick}
 		onkeydown={(e) => {
+			// Only the overlay itself closes the tooltip. Enter/Space press on a
+			// focused control inside it must activate that control instead.
+			if (e.target !== e.currentTarget) return;
 			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();
 				handleOverlayClick(e);
@@ -2326,6 +2329,10 @@
 		aria-labelledby="tooltip-header"
 		onclick={handleExpand}
 		onkeydown={(e) => {
+			// The whole preview acts as one big "expand" button, but a focused tab or
+			// other control inside it owns its own Enter/Space handling. Expanding the
+			// tooltip instead would swallow the activation.
+			if (e.target !== e.currentTarget) return;
 			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();
 				handleExpand();

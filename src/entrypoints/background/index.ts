@@ -32,7 +32,6 @@ import {
 import { dispatchContentMessage } from './handlers';
 import { getQueueStatus } from './endpoints/core';
 import { SETTINGS_DEFAULTS } from '@/lib/types/settings';
-import { loadCustomApis } from '@/lib/stores/custom-apis';
 import { t } from '@/lib/utils/i18n';
 
 async function seedDefaultSettings(): Promise<void> {
@@ -253,8 +252,6 @@ async function handleCaptchaSuccess(
 			return;
 		}
 
-		await removeStorage('local', storageKey);
-
 		if (sender.tab?.id && isApiOriginSender(sender)) {
 			await browser.tabs.remove(sender.tab.id).catch(() => {});
 		}
@@ -275,12 +272,20 @@ async function handleCaptchaSuccess(
 
 		if (session.senderTabId === undefined) {
 			logger.error('No sender tab ID in captcha session — cannot deliver token');
-		} else {
-			await browser.tabs.sendMessage(session.senderTabId, message).catch((error: unknown) => {
-				logger.error('Failed to deliver captcha token to content script:', error);
-			});
+			await removeStorage('local', storageKey);
+			return;
 		}
 
+		try {
+			await browser.tabs.sendMessage(session.senderTabId, message);
+		} catch (error) {
+			// Keep the session so a retry (or the 10-minute GC) can still deliver it,
+			// instead of deleting the only copy of the token.
+			logger.error('Failed to deliver captcha token to content script:', error);
+			return;
+		}
+
+		await removeStorage('local', storageKey);
 		logger.info('Captcha completed for session:', sessionId);
 	} finally {
 		activeCaptchaSessions.delete(sessionId);
@@ -318,7 +323,9 @@ async function handleCaptchaError(
 	logger.error('Captcha verification failed:', error);
 }
 
-// Prevent unbounded growth of dev logs/perf entries across sessions
+// Prevent unbounded growth of dev logs/perf entries across sessions. This must
+// not run on every service-worker wake: MV3 restarts the worker after ~30s of
+// idle, which would wipe the logs the user turned debug mode on to collect.
 async function clearDevDataOnStartup(): Promise<void> {
 	try {
 		await removeStorage('local', [STORAGE_KEYS.DEVELOPER_LOGS, STORAGE_KEYS.PERFORMANCE_ENTRIES]);
@@ -333,16 +340,15 @@ export default defineBackground(() => {
 		id: browser.runtime.id
 	});
 
-	clearDevDataOnStartup().catch((error: unknown) => {
-		logger.warn('Failed to clear dev data:', error);
+	browser.runtime.onStartup.addListener(() => {
+		void clearDevDataOnStartup();
+	});
+	browser.runtime.onInstalled.addListener(() => {
+		void clearDevDataOnStartup();
 	});
 
 	seedDefaultSettings().catch((error: unknown) => {
 		logger.error('Failed to seed default settings:', error);
-	});
-
-	loadCustomApis().catch((error: unknown) => {
-		logger.error('Failed to load custom APIs:', error);
 	});
 
 	initializeQueuePolling().catch((error: unknown) => {
@@ -351,14 +357,32 @@ export default defineBackground(() => {
 
 	async function dispatchCaptchaMessage(message: unknown, sender: CaptchaSender): Promise<boolean> {
 		const parsed = safeParseCaptchaExternalMessage(message);
-		if (!parsed.success) return false;
+		if (!parsed.success) {
+			// A captcha message we cannot parse used to vanish with no trace, leaving
+			// the queue popup waiting forever. Log it when the type is one we expect.
+			const type =
+				typeof message === 'object' && message !== null && 'type' in message
+					? message.type
+					: undefined;
+			if (
+				typeof type === 'string' &&
+				(Object.values(CAPTCHA_EXTERNAL_MESSAGES) as string[]).includes(type)
+			) {
+				logger.warn('Rejected malformed captcha message:', v.summarize(parsed.issues));
+			}
+			return false;
+		}
 
 		if (parsed.output.type === CAPTCHA_EXTERNAL_MESSAGES.SUCCESS) {
 			await handleCaptchaSuccess(parsed.output.session, parsed.output.token, sender);
 			return true;
 		}
 
-		await handleCaptchaError(parsed.output.session, parsed.output.error, sender);
+		await handleCaptchaError(
+			parsed.output.session ?? undefined,
+			parsed.output.error ?? undefined,
+			sender
+		);
 		return true;
 	}
 
@@ -370,7 +394,11 @@ export default defineBackground(() => {
 		(request: unknown, sender, sendResponse: (response: ApiResponse) => void) => {
 			void (async () => {
 				try {
-					if (await dispatchCaptchaMessage(request, sender)) return;
+					if (await dispatchCaptchaMessage(request, sender)) {
+						// Acknowledge captcha traffic so the sender's promise settles.
+						sendResponse({ success: true });
+						return;
+					}
 
 					const captchaStart = safeParseCaptchaStartMessage(request);
 					if (captchaStart.success) {
@@ -402,7 +430,7 @@ export default defineBackground(() => {
 		(
 			message: { type: string; token?: string; session?: string; error?: string },
 			sender,
-			_sendResponse
+			sendResponse
 		) => {
 			void (async () => {
 				try {
@@ -412,11 +440,16 @@ export default defineBackground(() => {
 					// an open channel to the background.
 					if (!isApiOriginSender(sender)) {
 						logger.warn('Rejected external message from unexpected origin');
+						sendResponse({ success: false, error: 'Unexpected origin' });
 						return;
 					}
-					await dispatchCaptchaMessage(message, sender);
+					const handled = await dispatchCaptchaMessage(message, sender);
+					sendResponse(
+						handled ? { success: true } : { success: false, error: 'Invalid captcha message' }
+					);
 				} catch (error) {
 					logger.error('External message handling failed:', error);
+					sendResponse(createErrorResponse(asApiError(error)));
 				}
 			})();
 

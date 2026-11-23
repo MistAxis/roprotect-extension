@@ -48,8 +48,13 @@
 
 			if (consumeSkipWarning(friendButton)) return;
 
+			// Roblox localizes the button label ("Ajouter", "追加", ...), so the
+			// English word alone would silently disable this safety warning in every
+			// non-English locale. The plus icon is the locale-independent signal for
+			// the "not yet friends" state; either one is enough.
 			const buttonText = friendButton.textContent.trim().toLowerCase();
-			if (!buttonText.includes('add')) return;
+			const hasAddIcon = friendButton.querySelector('.icon-add') !== null;
+			if (!buttonText.includes('add') && !hasAddIcon) return;
 
 			const userCard = friendButton.closest(SEARCH_SELECTORS.CARD.CONTAINER);
 			if (!userCard) return;

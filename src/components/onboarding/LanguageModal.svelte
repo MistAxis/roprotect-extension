@@ -73,6 +73,7 @@
 				{$_('onboarding_translate_description')}
 			</p>
 			<Toggle
+				ariaLabel={$_('settings_label_translate_violations')}
 				checked={$settings[SETTINGS_KEYS.TRANSLATE_VIOLATIONS_ENABLED]}
 				onchange={handleTranslateChange}
 			/>

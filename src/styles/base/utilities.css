@@ -12,9 +12,13 @@
 	-moz-osx-font-smoothing: grayscale !important;
 }
 
-*,
-::before,
-::after {
+/* Scope the reset to shadow-root content: this stylesheet is also injected
+   page-globally (Roblox's own DOM hosts several of our components), and a bare
+   universal selector would rewrite the page's box model. `:host` never matches
+   outside a shadow tree. */
+:host *,
+:host *::before,
+:host *::after {
 	box-sizing: border-box;
 }
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { get } from 'svelte/store';
 	import ChangelogModal from '@/components/changelog/ChangelogModal.svelte';
 	import OnboardingManager from '@/components/onboarding/OnboardingManager.svelte';
 	import ApiKeyEntryModal from '@/components/legal/ApiKeyEntryModal.svelte';
@@ -18,8 +17,6 @@
 	import { closeOutfitViewer, outfitViewerRequest } from '@/lib/stores/outfit-viewer';
 	import { logger } from '@/lib/utils/logging/logger';
 	import { getStorage, removeStorage } from '@/lib/utils/storage';
-
-	const showChangelog = get(shouldShowChangelogModal);
 
 	async function checkPopupRequests() {
 		const [replayRequested, legalRequested] = await Promise.all([
@@ -51,7 +48,7 @@
 	/>
 {/if}
 
-{#if showChangelog}
+{#if $shouldShowChangelogModal}
 	<ChangelogModal onClose={() => logger.debug('Changelog modal closed')} />
 {/if}
 

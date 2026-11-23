@@ -14,6 +14,10 @@ export abstract class PageController {
 	protected url: string;
 	protected isInitialized = false;
 	protected mountedComponents: Array<{ element: HTMLElement; cleanup: () => void }> = [];
+	// Set by cleanup(). initialize() awaits the page DOM for seconds, and the
+	// controller may be torn down (navigation, gate close, viewer switch) while it
+	// waits; it must not mount anything after that.
+	protected cancelled = false;
 
 	// Checked once at init and runtime toggling does not retroactively initialize/cleanup
 	protected readonly settingsKey?: SettingsKey;
@@ -24,7 +28,18 @@ export abstract class PageController {
 		logger.debug(`Creating ${this.constructor.name}`, { pageType, url });
 	}
 
+	// Read through a method: TypeScript narrows the module-level flag from an
+	// earlier check and would otherwise treat the post-await re-check as dead.
+	protected isCancelled(): boolean {
+		return this.cancelled;
+	}
+
 	async initialize(): Promise<void> {
+		if (this.isCancelled()) {
+			logger.debug(`${this.constructor.name} cancelled before initialize`);
+			return;
+		}
+
 		if (this.isInitialized) {
 			logger.warn(`${this.constructor.name} already initialized`);
 			return;
@@ -46,7 +61,16 @@ export abstract class PageController {
 			logger.debug(`Initializing ${this.constructor.name}`);
 
 			await this.waitForDOM();
+			if (this.isCancelled()) return;
+
 			await this.initializePage();
+
+			// Cleanup ran while initializePage() was awaiting the DOM: remove
+			// anything it managed to insert instead of leaving an orphan mounted.
+			if (this.isCancelled()) {
+				await this.cleanup();
+				return;
+			}
 
 			this.isInitialized = true;
 			logger.debug(`${this.constructor.name} initialized successfully`);
@@ -56,6 +80,8 @@ export abstract class PageController {
 	}
 
 	async cleanup(): Promise<void> {
+		this.cancelled = true;
+
 		const endTrace = startTrace(TRACE_CATEGORIES.CONTROLLER, `${this.constructor.name}.cleanup`, {
 			pageType: this.pageType
 		});

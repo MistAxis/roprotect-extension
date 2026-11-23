@@ -393,7 +393,12 @@
 					bind:value={publicNoteLevel}
 				/>
 			</div>
-			<textarea class="pasc-textarea" rows="3" bind:value={publicNote}></textarea>
+			<textarea
+				class="pasc-textarea"
+				aria-label={$_('pasc_edit_public_note')}
+				rows="3"
+				bind:value={publicNote}
+			></textarea>
 		</div>
 		<div class="pasc-field">
 			<div class="pasc-field-row">

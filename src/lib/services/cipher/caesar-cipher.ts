@@ -21,9 +21,12 @@ const LABEL_MATCH_PATTERN =
 const LABEL_KEYWORD_PATTERN = /\b(?:caesar|cipher|decode|decrypt|decipher)\b/i;
 
 export function caesarShift(text: string, shift: number): string {
+	// Normalise into 0..25 up front: callers pass negative shifts and, without
+	// this, a shift below -51 produces a negative modulo and the wrong letters.
+	const normalized = ((Math.trunc(shift) % 26) + 26) % 26;
 	return text.replaceAll(/[a-zA-Z]/g, (char) => {
 		const base = char <= 'Z' ? 65 : 97;
-		return String.fromCharCode(((char.charCodeAt(0) - base + shift + 26) % 26) + base);
+		return String.fromCharCode(((char.charCodeAt(0) - base + normalized) % 26) + base);
 	});
 }
 

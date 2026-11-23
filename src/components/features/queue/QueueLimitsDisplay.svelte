@@ -37,10 +37,11 @@
 			: 0
 	);
 
+	let nowSeconds = $state(Math.floor(Date.now() / 1000));
+
 	const resetText = $derived.by(() => {
 		if (!queueLimits) return '';
-		const now = Math.floor(Date.now() / 1000);
-		const secondsLeft = queueLimits.reset_time - now;
+		const secondsLeft = queueLimits.reset_time - nowSeconds;
 		if (secondsLeft < 0) return $_('stats_queue_resetting');
 		const hours = Math.floor(secondsLeft / 3600);
 		const minutes = Math.floor((secondsLeft % 3600) / 60);
@@ -67,6 +68,13 @@
 
 	onMount(() => {
 		if (autoLoad) void loadLimits();
+
+		// The reset countdown is derived from the wall clock, so it needs a ticker
+		// or it would freeze at whatever it showed when the panel mounted.
+		const ticker = setInterval(() => {
+			nowSeconds = Math.floor(Date.now() / 1000);
+		}, 30_000);
+		return () => clearInterval(ticker);
 	});
 
 	export function refresh() {

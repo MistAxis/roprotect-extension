@@ -46,6 +46,7 @@ export interface BatchProviderProgress {
 }
 
 const SYSTEM_API_IDS = ['system-scsn', 'system-rab', 'system-tase', 'system-pasc'] as const;
+const PASC_API_ID = 'system-pasc';
 
 // SCSN answers slowly, so split it into smaller chunks: the first answers land
 // sooner (progress keeps moving) and less work is lost when a chunk times out.
@@ -181,7 +182,7 @@ export function queryUserProgressive(
 
 			if (controller.signal.aborted) return;
 
-			const data = api.id === 'system-pasc' ? await sanitizePascResult(result) : result;
+			const data = api.id === PASC_API_ID ? await sanitizePascResult(result) : result;
 			if (isAborted()) return;
 
 			apiResults.set(api.id, { ...base, data });
@@ -322,7 +323,7 @@ export async function queryMultipleUsers(
 		userStatus: UserStatus | undefined
 	): { data?: UserStatus } => {
 		if (userStatus) return { data: userStatus };
-		if (api.id === 'system-pasc') return {};
+		if (api.id === PASC_API_ID) return {};
 		return {
 			data: parseUserStatus({ id: Number.parseInt(userId, 10), flagType: STATUS.FLAGS.SAFE })
 		};
@@ -347,7 +348,7 @@ export async function queryMultipleUsers(
 
 			// Resolve clearance once per scan rather than once per chunk. A failed
 			// lookup falls back to level 0, which strips every gated detail.
-			if (api.id === 'system-pasc') await ensurePascClearance();
+			if (api.id === PASC_API_ID) await ensurePascClearance();
 			const pascViewer = get(pascViewerLevel);
 
 			const processChunk = async (chunk: string[]): Promise<void> => {
@@ -361,7 +362,7 @@ export async function queryMultipleUsers(
 					const userMap = new Map(apiStatuses.map((s) => [s.id.toString(), s]));
 					for (const userId of chunk) {
 						const resolved = resolveBatchEntry(userId, api, userMap.get(userId));
-						if (api.id === 'system-pasc' && resolved.data) {
+						if (api.id === PASC_API_ID && resolved.data) {
 							resolved.data = sanitizePascUserStatus(resolved.data, pascViewer);
 						}
 						setApiResult(userId, api, resolved);
@@ -452,6 +453,19 @@ export async function queryMultipleUsers(
 export function countCustomApiFlags<T extends UserStatus | GroupStatus>(
 	combined: CombinedStatus<T>
 ): number {
+	// A present PASC record replaces every other verdict (including a downgrade to
+	// SAFE), so custom detections must not keep an "integration" badge alive next
+	// to a "Not Flagged" verdict.
+	const pasc = combined.get(PASC_API_ID);
+	if (
+		pasc &&
+		isPascRecordPresent(pasc) &&
+		pasc.data?.flagType !== STATUS.FLAGS.UNKNOWN &&
+		!isActionableResult(pasc)
+	) {
+		return 0;
+	}
+
 	let count = 0;
 	for (const [apiId, result] of combined.entries()) {
 		if (apiId.startsWith('system-')) continue;
@@ -469,9 +483,9 @@ export function pickDefaultTab<T extends UserStatus | GroupStatus>(
 
 	// PASC override decides the tab alone: a present record replaces every other
 	// verdict, so there is no reason to wait for slower providers to settle.
-	const pascResult = combined.get('system-pasc');
+	const pascResult = combined.get(PASC_API_ID);
 	if (pascResult && !pascResult.loading && !pascResult.error && isPascRecordPresent(pascResult)) {
-		return 'system-pasc';
+		return PASC_API_ID;
 	}
 
 	const values = [...combined.values()];

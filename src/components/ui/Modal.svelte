@@ -10,6 +10,7 @@
 
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { _ } from 'svelte-i18n';
 	import OverlayPortal from '@/components/overlay/OverlayPortal.svelte';
 	import { CircleCheckBig, CircleX, Info, TriangleAlert, X } from '@lucide/svelte';
 
@@ -257,7 +258,7 @@
 						<button
 							bind:this={closeButtonEl}
 							class="modal-close"
-							aria-label="Close dialog"
+							aria-label={$_('common_close')}
 							onclick={() => void closeModal(false)}
 							type="button"
 						>

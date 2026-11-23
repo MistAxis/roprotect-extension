@@ -46,7 +46,6 @@
 		} catch (error) {
 			logger.error('Failed to fill report form:', error);
 			showFeedback('error', $_('report_helper_filled_error'));
-			throw error;
 		} finally {
 			processing = false;
 		}

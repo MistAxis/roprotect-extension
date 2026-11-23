@@ -66,5 +66,9 @@ export class DedupeCache<K, V> {
 
 	clear(): void {
 		this.cache.clear();
+		// Also drop the in-flight promises: a fetch that started before the clear
+		// would otherwise resolve afterwards and write the previous data (for
+		// example another viewer's Discord links) back into the fresh cache.
+		this.pending.clear();
 	}
 }

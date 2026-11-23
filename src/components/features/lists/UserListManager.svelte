@@ -394,6 +394,8 @@
 
 				for (const { element, oldUserId } of reusedElements) {
 					resetElementBlur(element);
+					// The previous occupant's flag must not leak onto the new user.
+					element.removeAttribute(STATUS_SELECTORS.DATA_FLAGGED);
 					mountedComponents.removeOne(oldUserId);
 				}
 			}
@@ -458,6 +460,8 @@
 						revealUserElement(user.element, status);
 						if (isFlagged(status)) {
 							user.element.setAttribute(STATUS_SELECTORS.DATA_FLAGGED, 'true');
+						} else {
+							user.element.removeAttribute(STATUS_SELECTORS.DATA_FLAGGED);
 						}
 					}
 				}
@@ -470,6 +474,8 @@
 					revealUserElement(user.element, status);
 					if (isFlagged(status)) {
 						user.element.setAttribute(STATUS_SELECTORS.DATA_FLAGGED, 'true');
+					} else {
+						user.element.removeAttribute(STATUS_SELECTORS.DATA_FLAGGED);
 					}
 				}
 				mountStatusIndicator(user, false);

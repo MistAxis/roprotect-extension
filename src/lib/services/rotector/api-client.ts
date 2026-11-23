@@ -103,8 +103,8 @@ class RotectorApiClient {
 	async checkMultipleGroups(
 		groupIds: Array<string | number>,
 		options: RequestOptions = {}
-	): Promise<GroupStatus[]> {
-		return sendMessage<GroupStatus[]>(
+	): Promise<Array<GroupStatus | null>> {
+		return sendMessage<Array<GroupStatus | null>>(
 			API_ACTIONS.CHECK_MULTIPLE_GROUPS,
 			{
 				groupIds,

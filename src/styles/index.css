@@ -31,7 +31,6 @@
 /* =================================
    POPUP IMPORTS
    ================================= */
-@import url('./popup/base.css');
 @import url('./popup/shared.css');
 @import url('./popup/navbar.css');
 @import url('./popup/stats/stats.css');

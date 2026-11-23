@@ -13,7 +13,9 @@ const CaptchaSessionSchema = v.object({
 	timestamp: v.number()
 });
 
-// Inbound message from the roscoe-bridge content script
+// Inbound message from the roscoe-bridge content script. `nullish`, not just
+// `optional`: the page builds these as `sessionId ?? null`, and rejecting an
+// explicit null would drop the error silently and leave the queue popup waiting.
 const CaptchaExternalMessageSchema = v.variant('type', [
 	v.object({
 		type: v.literal(CAPTCHA_EXTERNAL_MESSAGES.SUCCESS),
@@ -22,8 +24,8 @@ const CaptchaExternalMessageSchema = v.variant('type', [
 	}),
 	v.object({
 		type: v.literal(CAPTCHA_EXTERNAL_MESSAGES.ERROR),
-		session: v.optional(v.pipe(v.string(), v.maxLength(128))),
-		error: v.optional(v.pipe(v.string(), v.maxLength(2000)))
+		session: v.optional(v.nullish(v.pipe(v.string(), v.maxLength(128)))),
+		error: v.optional(v.nullish(v.pipe(v.string(), v.maxLength(2000))))
 	})
 ]);
 

@@ -279,9 +279,26 @@ function getOrCreateStyleElement(): HTMLStyleElement {
 	return el;
 }
 
+// Removes every trace of a blur mark, including the click interceptor and the
+// inline reveal overrides. Removing the stylesheet alone leaves both behind, so
+// the next click on a previously blurred name would be swallowed.
+function clearBlurMarks(): void {
+	const marked = document.querySelectorAll(
+		`[${CSS.escape(BLUR_SELECTORS.BLUR_USER_ID)}], .${BLUR_REVEALED_CLASS}`
+	);
+	for (const el of marked) {
+		el.classList.remove(BLUR_REVEALED_CLASS);
+		cleanupBlurElement(el);
+		if (el instanceof HTMLElement) {
+			el.style.removeProperty('filter');
+			el.style.removeProperty('user-select');
+		}
+	}
+}
+
 export function injectBlurStyles(): void {
 	if (!isBlurEnabled()) {
-		document.querySelector(`#${BLUR_STYLE_ID}`)?.remove();
+		removeBlurStyles();
 		return;
 	}
 	getOrCreateStyleElement().textContent = buildBlurCSS();
@@ -293,6 +310,7 @@ export function injectDefaultBlurStyles(): void {
 
 export function removeBlurStyles(): void {
 	document.querySelector(`#${BLUR_STYLE_ID}`)?.remove();
+	clearBlurMarks();
 }
 
 // Marks descendants under element using either modal selectors or the page-specific selector set
@@ -322,11 +340,19 @@ export function markUserElementForBlur(element: Element, userId: string, pageTyp
 
 export function resetElementBlur(element: Element): void {
 	element.classList.remove(BLUR_REVEALED_CLASS);
-	for (const el of element.querySelectorAll(`[${CSS.escape(BLUR_SELECTORS.BLUR_USER_ID)}]`)) {
+	// Also match `.blur-revealed`: a revealed node already had its data-blur-*
+	// attributes removed, so an attribute-only sweep would leave it unblurred
+	// (inline `filter:none !important`) when Roblox recycles the card for a
+	// different user.
+	const targets = element.querySelectorAll(
+		`[${CSS.escape(BLUR_SELECTORS.BLUR_USER_ID)}], .${BLUR_REVEALED_CLASS}`
+	);
+	for (const el of targets) {
 		el.classList.remove(BLUR_REVEALED_CLASS);
 		cleanupBlurElement(el);
 		if (el instanceof HTMLElement) {
 			el.style.removeProperty('filter');
+			el.style.removeProperty('user-select');
 		}
 	}
 }

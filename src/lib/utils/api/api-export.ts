@@ -2,7 +2,11 @@ import LZString from 'lz-string';
 import * as v from 'valibot';
 import { get } from 'svelte/store';
 import type { CustomApiConfig } from '../../types/custom-api';
-import { type ImportedApiConfig, parseImportedApiConfig } from '../../schemas/custom-api';
+import {
+	type ImportedApiConfig,
+	MAX_IMPORTED_API_NAME_LENGTH,
+	parseImportedApiConfig
+} from '../../schemas/custom-api';
 import { addCustomApi, customApis } from '../../stores/custom-apis';
 import { logger } from '../logging/logger';
 
@@ -22,7 +26,11 @@ function exportCustomApi(config: CustomApiConfig): string {
 }
 
 const MAX_ENCODED_LENGTH = 200_000;
-const MAX_DECOMPRESSED_LENGTH = 64_000;
+// Must cover the largest imported config: a 512k-character landscape data URL
+// plus its URLs/name JSON overhead. The encoded cap above is what bounds the
+// decompression work; this one only rejects a bundle that could not be a valid
+// config anyway (and previously rejected exports of its own schema limit).
+const MAX_DECOMPRESSED_LENGTH = 700_000;
 
 // Throws with a user-readable message on bad base64, bad JSON, or schema mismatch
 export function importCustomApi(encodedData: string): ImportedApiConfig {
@@ -83,7 +91,11 @@ export async function importApi(encodedData: string): Promise<CustomApiConfig> {
 	let counter = 1;
 
 	while (current.some((api) => api.name === newName)) {
-		newName = `${decodedConfig.name} (${String(counter)})`;
+		// Keep the rename inside the importer's own name limit, otherwise the
+		// stored API could never be re-exported or edited (the form rejects it).
+		const suffix = ` (${String(counter)})`;
+		const available = Math.max(1, MAX_IMPORTED_API_NAME_LENGTH - suffix.length);
+		newName = `${decodedConfig.name.slice(0, available)}${suffix}`;
 		counter++;
 	}
 

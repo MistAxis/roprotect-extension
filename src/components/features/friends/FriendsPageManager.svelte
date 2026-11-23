@@ -22,6 +22,11 @@
 	let scanBarContainer: HTMLElement | null = null;
 	let scanBarCleanup: (() => void) | null = null;
 	let scanBarSetupInFlight = false;
+	// Bumped whenever the scan bar is torn down or the page manager is destroyed.
+	// The setup path awaits Roblox's DOM for up to a few seconds, so it has to
+	// notice that its result is no longer wanted before touching the page.
+	let scanBarSetupId = 0;
+	let destroyed = false;
 	let syntheticChipRow: HTMLElement | null = null;
 	let tagFiltersHost: HTMLElement | null = null;
 	let tagFiltersComponent: ReturnType<typeof mount> | null = null;
@@ -31,7 +36,7 @@
 
 	$effect(() => {
 		void waitForElement(FRIENDS_SELECTORS.CONTAINER).then((r) => {
-			if (r.success) showFriendsList = true;
+			if (r.success && !destroyed) showFriendsList = true;
 		});
 		void setupScanBar();
 		onMount?.(cleanup);
@@ -79,16 +84,19 @@
 	}
 
 	async function setupScanBar() {
-		if (!isFriendsTab()) return;
+		if (destroyed || !isFriendsTab()) return;
 		if (scanBarContainer || scanBarSetupInFlight) return;
 
 		const userId = getUserIdFromUrl();
 		if (!userId) return;
 
+		const setupId = ++scanBarSetupId;
+		const stillWanted = () => !destroyed && setupId === scanBarSetupId && isFriendsTab();
+
 		scanBarSetupInFlight = true;
 		try {
 			const headerResult = await waitForElement('.friends-content .container-header');
-			if (!headerResult.success) return;
+			if (!headerResult.success || !stillWanted()) return;
 
 			const header = headerResult.element;
 
@@ -99,9 +107,21 @@
 			// friends-page filters; fall back to the search field wrapper on
 			// third-party reshuffles (Roseal) that move the header around.
 			const chipFilters = await resolveChipFiltersRow(header);
+			if (!stillWanted()) return;
+
 			if (chipFilters) {
-				chipFilters.insertBefore(container, chipFilters.firstElementChild);
-				mountTagFilters(chipFilters);
+				let row = chipFilters.row;
+				if (!row) {
+					// Created here rather than while resolving, so a setup that lost
+					// the race never leaves a synthetic row behind.
+					const synthetic = document.createElement('div');
+					synthetic.className = 'chip-filters-container rotector-friends-chip-row';
+					header.append(synthetic);
+					syntheticChipRow = synthetic;
+					row = synthetic;
+				}
+				row.insertBefore(container, row.firstElementChild);
+				mountTagFilters(row);
 			} else {
 				// Roseal restructures the header, so resolve the search field's own
 				// wrapper first and only fall back to the filter block when it is absent.
@@ -118,6 +138,13 @@
 				mountTagFilters(searchBar.parentNode as Element, container);
 			}
 			scanBarContainer = container;
+
+			// The cleanup can run while the panel is mounting, in which case the
+			// teardown already happened and the component must be removed here.
+			if (!stillWanted()) {
+				cleanupScanBar();
+				return;
+			}
 
 			const component = mount(FriendsScanPanel, {
 				target: container,
@@ -138,9 +165,11 @@
 	// otherwise be dropped into the search field's row. Recreate the chip row
 	// with Roblox's own class so it inherits the native column layout, gap and
 	// margins and sits under the search field exactly like it does on our own.
-	async function resolveChipFiltersRow(header: Element): Promise<Element | null> {
+	async function resolveChipFiltersRow(
+		header: Element
+	): Promise<{ row: Element; synthetic: false } | { row: null; synthetic: true } | null> {
 		const nativeRow = header.querySelector<HTMLElement>('.chip-filters-container');
-		if (nativeRow) return nativeRow;
+		if (nativeRow) return { row: nativeRow, synthetic: false };
 
 		// The header exists before Roblox renders its chip row, so give React
 		// the same window the previous implementation did before deciding the
@@ -152,18 +181,14 @@
 			baseDelay: 100,
 			maxDelay: 400
 		});
-		if (chipResult.success) return chipResult.element;
+		if (chipResult.success) return { row: chipResult.element, synthetic: false };
 
 		// Roseal splits the header into left/right columns; keep using its
 		// search-field fallback rather than appending into a reshuffled header.
 		if (header.querySelector('.friends-left, .friends-right')) return null;
 		if (!header.querySelector('.friends-subtitle')) return null;
 
-		const row = document.createElement('div');
-		row.className = 'chip-filters-container rotector-friends-chip-row';
-		header.append(row);
-		syntheticChipRow = row;
-		return row;
+		return { row: null, synthetic: true };
 	}
 
 	function mountTagFilters(parent: Element, after?: Element) {
@@ -237,6 +262,8 @@
 	}
 
 	function cleanupScanBar() {
+		// Invalidates a setup still waiting for Roblox's DOM.
+		scanBarSetupId += 1;
 		if (scanBarCleanup) {
 			scanBarCleanup();
 			scanBarCleanup = null;
@@ -254,6 +281,7 @@
 	}
 
 	function cleanup() {
+		destroyed = true;
 		cleanupScanBar();
 		showFriendsList = false;
 	}
