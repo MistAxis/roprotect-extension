@@ -653,7 +653,11 @@
 				targetSelector = found;
 			}
 
-			const targetElement = tileElement.querySelector<HTMLElement>(targetSelector);
+			// Carousel tiles are their own anchor now (the tile content wrapper is
+			// gone), so allow the selector to match the processed element.
+			const targetElement = tileElement.matches(targetSelector)
+				? tileElement
+				: tileElement.querySelector<HTMLElement>(targetSelector);
 			if (!targetElement) {
 				throw new Error(`Target element not found for selector: ${targetSelector}`);
 			}

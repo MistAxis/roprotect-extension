@@ -2,9 +2,11 @@ export const FRIENDS_CAROUSEL_SELECTORS = {
 	CONTAINER: '.friends-carousel-container',
 	HEADER: '.react-friends-carousel-container .container-header.people-list-header',
 	TILE: '.friends-carousel-tile',
-	TILE_CONTENT: '.friend-tile-content',
-	PROFILE_LINK: '.avatar-card-link',
-	DISPLAY_NAME: '.friends-carousel-display-name',
+	// The 2026 carousel dropped .friend-tile-content; the tile itself is the
+	// stable anchor for the indicator (the headshot clips its own wrapper).
+	TILE_CONTENT: '.friends-carousel-tile',
+	PROFILE_LINK: 'a[href*="/users/"]',
+	DISPLAY_NAME: '[data-testid="friends-carousel-tile-labels"] span, .friends-carousel-display-name',
 	AVATAR_IMG: '.avatar-card-image img'
 } as const;
 
