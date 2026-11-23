@@ -32,7 +32,7 @@
 		0: 'Bloxlink',
 		1: 'RoVer',
 		2: 'Profile',
-		3: 'Rotector'
+		3: 'RoProtect'
 	};
 
 	const VERIFICATION_SOURCE_URLS: Record<number, string> = {

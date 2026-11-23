@@ -16,7 +16,7 @@ class Logger {
 
 		subscribeStorageKey<boolean>('sync', 'debugModeEnabled', (newValue) => {
 			this.debugEnabled = !!newValue;
-			console.log('[Rotector] Debug mode changed to:', this.debugEnabled);
+			console.log('[RoProtect] Debug mode changed to:', this.debugEnabled);
 		});
 	}
 
@@ -70,17 +70,17 @@ class Logger {
 				SETTINGS_DEFAULTS.debugModeEnabled
 			);
 			if (this.debugEnabled) {
-				console.log('[Rotector] Debug mode is enabled');
+				console.log('[RoProtect] Debug mode is enabled');
 			}
 		} catch (error) {
-			console.warn('[Rotector] Could not initialize debug mode from storage', error);
+			console.warn('[RoProtect] Could not initialize debug mode from storage', error);
 			this.debugEnabled = false;
 		}
 	}
 
 	private formatMessage(level: string, message: string): string {
 		const timestamp = new Date().toISOString().slice(11, 23); // HH:mm:ss.SSS
-		return `[${timestamp}] [${level}] Rotector Extension: ${message}`;
+		return `[${timestamp}] [${level}] RoProtect Extension: ${message}`;
 	}
 
 	private serializeData(data: unknown[]): unknown {

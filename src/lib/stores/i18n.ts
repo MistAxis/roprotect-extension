@@ -2,11 +2,13 @@ import { addMessages, init, locale, getLocaleFromNavigator } from 'svelte-i18n';
 import { SETTINGS_KEYS } from '../types/settings';
 import { logger } from '../utils/logging/logger';
 import { getStorage, setStorage, subscribeStorageKey } from '../utils/storage';
+import { themeManager } from '../utils/theme';
 import {
 	SUPPORTED_LOCALES,
 	LOCALE_DISPLAY_NAMES,
 	normalizeLocale,
 	loadLocaleMessages,
+	RTL_LOCALES,
 	type SupportedLocale
 } from '../utils/i18n';
 
@@ -39,6 +41,9 @@ async function applyLocale(localeCode: string): Promise<void> {
 	);
 	if (targetLocale !== 'en') await loadLocale('en');
 	await loadLocale(targetLocale);
+	// Extension pages mirror the direction on <html>; content scripts apply it to
+	// the shadow-root portals only, so Roblox's own page layout is untouched.
+	themeManager.setDirection(RTL_LOCALES.has(targetLocale) ? 'rtl' : 'ltr');
 	void locale.set(targetLocale);
 }
 

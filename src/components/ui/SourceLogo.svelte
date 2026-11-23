@@ -29,7 +29,7 @@
 	} as const;
 
 	const NAMES = {
-		rotector: 'Rotector',
+		rotector: 'RoProtect',
 		rab: 'RAB',
 		tase: 'TASE',
 		okappiki: 'Okappiki'

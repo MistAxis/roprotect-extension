@@ -22,20 +22,22 @@ import {
 
 const BLUR_STYLE_ID = 'rotector-blur-styles';
 
+type BlurSelector = string | readonly string[];
+
 const PAGE_SELECTORS: Record<
 	PageType,
-	{ displayName?: string; username?: string; avatar?: string }
+	{ displayName?: BlurSelector; username?: BlurSelector; avatar?: BlurSelector }
 > = {
 	[PAGE_TYPES.FRIENDS_CAROUSEL]: {
-		displayName: BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME,
+		displayName: [BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME, BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME_V2],
 		avatar: BLUR_SELECTORS.TILE_CAROUSEL_AVATAR
 	},
 	[PAGE_TYPES.HOME]: {
-		displayName: BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME,
+		displayName: [BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME, BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME_V2],
 		avatar: BLUR_SELECTORS.TILE_CAROUSEL_AVATAR
 	},
 	[PAGE_TYPES.PROFILE]: {
-		displayName: BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME,
+		displayName: [BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME, BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME_V2],
 		avatar: BLUR_SELECTORS.TILE_CAROUSEL_AVATAR
 	},
 	[PAGE_TYPES.FRIENDS_LIST]: {
@@ -44,9 +46,9 @@ const PAGE_SELECTORS: Record<
 		avatar: BLUR_SELECTORS.TILE_THUMBNAIL
 	},
 	[PAGE_TYPES.SEARCH_USER]: {
-		displayName: BLUR_SELECTORS.SEARCH_DISPLAY_NAME,
-		username: BLUR_SELECTORS.CARD_USERNAME,
-		avatar: BLUR_SELECTORS.TILE_THUMBNAIL
+		displayName: [BLUR_SELECTORS.SEARCH_DISPLAY_NAME, BLUR_SELECTORS.SEARCH_DISPLAY_NAME_V2],
+		username: [BLUR_SELECTORS.CARD_USERNAME, BLUR_SELECTORS.SEARCH_USERNAME_V2],
+		avatar: [BLUR_SELECTORS.SEARCH_AVATAR, BLUR_SELECTORS.SEARCH_AVATAR_V2]
 	},
 	[PAGE_TYPES.MEMBERS]: {},
 	[PAGE_TYPES.REPORT]: {},
@@ -64,13 +66,16 @@ const PAGE_SELECTORS: Record<
 const SELECTOR_PAGES: Record<string, PageKey[]> = {
 	// Display names
 	[BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME]: ['home', 'profile'],
+	[BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME_V2]: ['home', 'profile'],
 	[BLUR_SELECTORS.CARD_DISPLAY_NAME]: ['friends'],
 	[BLUR_SELECTORS.SEARCH_DISPLAY_NAME]: ['search'],
+	[BLUR_SELECTORS.SEARCH_DISPLAY_NAME_V2]: ['search'],
 	[BLUR_SELECTORS.PROFILE_DISPLAY_NAME]: ['profile'],
 	[BLUR_SELECTORS.MEMBER_CAROUSEL_DISPLAY_NAME]: ['groups'],
 	[BLUR_SELECTORS.GROUP_CONFIGURE_DISPLAY_NAME]: ['groups'],
 	// Usernames
 	[BLUR_SELECTORS.CARD_USERNAME]: ['friends', 'search'],
+	[BLUR_SELECTORS.SEARCH_USERNAME_V2]: ['search'],
 	[BLUR_SELECTORS.GROUP_CONFIGURE_USERNAME]: ['groups'],
 	[BLUR_SELECTORS.PROFILE_USERNAME]: ['profile'],
 	// Descriptions
@@ -80,6 +85,7 @@ const SELECTOR_PAGES: Record<string, PageKey[]> = {
 	[BLUR_SELECTORS.CAROUSEL_AVATAR]: ['home', 'profile'],
 	[BLUR_SELECTORS.FRIENDS_LIST_AVATAR]: ['friends'],
 	[BLUR_SELECTORS.SEARCH_AVATAR]: ['search'],
+	[BLUR_SELECTORS.SEARCH_AVATAR_V2]: ['search'],
 	[BLUR_SELECTORS.PROFILE_AVATAR]: ['profile'],
 	[BLUR_SELECTORS.PROFILE_CURRENTLY_WEARING]: ['profile'],
 	[BLUR_SELECTORS.PROFILE_CURRENTLY_WEARING_STANDARD]: ['profile'],
@@ -90,7 +96,8 @@ const SELECTOR_PAGES: Record<string, PageKey[]> = {
 	[BLUR_SELECTORS.GROUP_CONFIGURE_AVATAR]: ['groups'],
 	// Reveal selectors
 	[`${BLUR_SELECTORS.FRIENDS_LIST_AVATAR}.blur-revealed`]: ['friends'],
-	[`${BLUR_SELECTORS.SEARCH_AVATAR}.blur-revealed`]: ['search']
+	[`${BLUR_SELECTORS.SEARCH_AVATAR}.blur-revealed`]: ['search'],
+	[`${BLUR_SELECTORS.SEARCH_AVATAR_V2}.blur-revealed`]: ['search']
 };
 
 function filterByPage(selectors: string[], ps: PageSettings): string[] {
@@ -129,8 +136,10 @@ function buildBlurCSS(allEnabled = false): string {
 		addRule(
 			[
 				BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME,
+				BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME_V2,
 				BLUR_SELECTORS.CARD_DISPLAY_NAME,
 				BLUR_SELECTORS.SEARCH_DISPLAY_NAME,
+				BLUR_SELECTORS.SEARCH_DISPLAY_NAME_V2,
 				BLUR_SELECTORS.PROFILE_DISPLAY_NAME,
 				BLUR_SELECTORS.MEMBER_CAROUSEL_DISPLAY_NAME,
 				BLUR_SELECTORS.GROUP_CONFIGURE_DISPLAY_NAME
@@ -147,6 +156,7 @@ function buildBlurCSS(allEnabled = false): string {
 	if (bs.usernames) {
 		otherTextSelectors.push(
 			BLUR_SELECTORS.CARD_USERNAME,
+			BLUR_SELECTORS.SEARCH_USERNAME_V2,
 			BLUR_SELECTORS.PROFILE_USERNAME,
 			BLUR_SELECTORS.GROUP_CONFIGURE_USERNAME
 		);
@@ -177,6 +187,7 @@ function buildBlurCSS(allEnabled = false): string {
 				BLUR_SELECTORS.CAROUSEL_AVATAR,
 				BLUR_SELECTORS.FRIENDS_LIST_AVATAR,
 				BLUR_SELECTORS.SEARCH_AVATAR,
+				BLUR_SELECTORS.SEARCH_AVATAR_V2,
 				BLUR_SELECTORS.PROFILE_AVATAR,
 				BLUR_SELECTORS.MEMBER_CAROUSEL_AVATAR,
 				BLUR_SELECTORS.GROUP_CONFIGURE_AVATAR
@@ -207,8 +218,10 @@ function buildBlurCSS(allEnabled = false): string {
 	if (bs.displayNames) {
 		allTextSelectors.push(
 			BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME,
+			BLUR_SELECTORS.CAROUSEL_DISPLAY_NAME_V2,
 			BLUR_SELECTORS.CARD_DISPLAY_NAME,
 			BLUR_SELECTORS.SEARCH_DISPLAY_NAME,
+			BLUR_SELECTORS.SEARCH_DISPLAY_NAME_V2,
 			BLUR_SELECTORS.PROFILE_DISPLAY_NAME,
 			BLUR_SELECTORS.MEMBER_CAROUSEL_DISPLAY_NAME,
 			BLUR_SELECTORS.GROUP_CONFIGURE_DISPLAY_NAME
@@ -228,6 +241,7 @@ function buildBlurCSS(allEnabled = false): string {
 				BLUR_SELECTORS.CAROUSEL_AVATAR,
 				BLUR_SELECTORS.FRIENDS_LIST_AVATAR,
 				BLUR_SELECTORS.SEARCH_AVATAR,
+				BLUR_SELECTORS.SEARCH_AVATAR_V2,
 				BLUR_SELECTORS.MEMBER_CAROUSEL_AVATAR,
 				BLUR_SELECTORS.GROUP_CONFIGURE_AVATAR
 			],
@@ -254,7 +268,8 @@ function buildBlurCSS(allEnabled = false): string {
 		const thumbnailRevealSelectors = filterByPage(
 			[
 				`${BLUR_SELECTORS.FRIENDS_LIST_AVATAR}.blur-revealed`,
-				`${BLUR_SELECTORS.SEARCH_AVATAR}.blur-revealed`
+				`${BLUR_SELECTORS.SEARCH_AVATAR}.blur-revealed`,
+				`${BLUR_SELECTORS.SEARCH_AVATAR_V2}.blur-revealed`
 			],
 			ps
 		);
@@ -332,9 +347,17 @@ export function markUserElementForBlur(element: Element, userId: string, pageTyp
 			}
 		: PAGE_SELECTORS[pageType];
 
-	if (displayNames) markAllElements(element, sel.displayName, userId, 'displayName');
-	if (usernames) markAllElements(element, sel.username, userId, 'username');
-	if (avatars) markAllElements(element, sel.avatar, userId, 'avatar');
+	const mark = (
+		selector: BlurSelector | undefined,
+		type: 'displayName' | 'username' | 'avatar'
+	) => {
+		const list = typeof selector === 'string' ? [selector] : (selector ?? []);
+		for (const entry of list) markAllElements(element, entry, userId, type);
+	};
+
+	if (displayNames) mark(sel.displayName, 'displayName');
+	if (usernames) mark(sel.username, 'username');
+	if (avatars) mark(sel.avatar, 'avatar');
 	endTrace();
 }
 

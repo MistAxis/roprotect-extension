@@ -1,6 +1,9 @@
 export const BLUR_SELECTORS = {
-	// Friend carousel tiles
+	// Friend carousel tiles. The 2026 redesign dropped the old class for a
+	// test-id label wrapper; both shapes are marked, but keep them as separate
+	// selectors because the reveal-rule builder composes a single selector.
 	CAROUSEL_DISPLAY_NAME: '.friends-carousel-display-name',
+	CAROUSEL_DISPLAY_NAME_V2: '[data-testid="friends-carousel-tile-labels"] span',
 
 	// Avatar cards
 	CARD_DISPLAY_NAME: '.avatar-name',
@@ -24,7 +27,9 @@ export const BLUR_SELECTORS = {
 	// Avatar selectors
 	CAROUSEL_AVATAR: '.friends-carousel-tile .avatar-card-image',
 	FRIENDS_LIST_AVATAR: '.list-item.avatar-card .thumbnail-2d-container',
+	// Legacy `.avatar-cards` markup plus the 2026 `.player-search-avatar` grid.
 	SEARCH_AVATAR: 'li.player-item.avatar-card .thumbnail-2d-container',
+	SEARCH_AVATAR_V2: '.player-search-avatar img',
 
 	// Relative selectors
 	TILE_CAROUSEL_AVATAR: '.avatar-card-image',
@@ -32,6 +37,8 @@ export const BLUR_SELECTORS = {
 
 	// Search results
 	SEARCH_DISPLAY_NAME: '.avatar-name-container .avatar-name',
+	SEARCH_DISPLAY_NAME_V2: '.player-search-card-name a',
+	SEARCH_USERNAME_V2: '.player-search-card-caption > p',
 
 	// Group members carousel
 	MEMBER_CAROUSEL_DISPLAY_NAME: '.rotector-member-tile .rotector-member-display-name',

@@ -242,6 +242,10 @@
 
 @utility group-members-page-btn {
 	@apply cursor-pointer rounded-sm border-none bg-none px-2 py-1;
+
+	/* Tailwind's bg-none only clears the background image; without this the UA's
+	   default ButtonFace makes the pager render light on a dark page. */
+	background-color: transparent;
 	transition: background-color 0.15s;
 
 	&:hover {

@@ -75,7 +75,7 @@ function buildReport(systemInfo: SystemInfo): string {
 	const logs = get(developerLogs);
 
 	const lines: string[] = [
-		'=== Rotector Extension Debug Log ===',
+		'=== RoProtect Extension Debug Log ===',
 		'',
 		'System Information:',
 		`- Extension Version: ${systemInfo.extensionVersion}`,

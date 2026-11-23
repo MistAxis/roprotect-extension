@@ -26,6 +26,10 @@ class ThemeManager {
 	private mediaQueryHandler: ((e: MediaQueryListEvent) => void) | null = null;
 	private robloxObserver: MutationObserver | null = null;
 	private readonly portalContainers = new Set<HTMLElement>();
+	// UI text direction. Applied to the document on extension pages and to every
+	// shadow-root portal on Roblox pages, where flipping <html> would mirror the
+	// page itself.
+	private direction: 'ltr' | 'rtl' = 'ltr';
 
 	constructor() {
 		this.initializeSystemThemeDetection();
@@ -61,6 +65,7 @@ class ThemeManager {
 
 		const currentTheme = this.getCurrentTheme();
 		container.dataset['theme'] = currentTheme;
+		if (this.direction === 'rtl') container.setAttribute('dir', 'rtl');
 		logger.debug('Portal container registered for theme updates');
 	}
 
@@ -68,6 +73,28 @@ class ThemeManager {
 		for (const portal of this.portalContainers) {
 			if (!portal.isConnected) this.portalContainers.delete(portal);
 		}
+	}
+
+	setDirection(direction: 'ltr' | 'rtl'): void {
+		this.direction = direction;
+
+		// Popup/options: the whole document follows the locale.
+		if (!this.isRobloxPage()) {
+			document.documentElement.dir = direction;
+		}
+
+		for (const portal of this.portalContainers) {
+			if (!portal.isConnected) continue;
+			if (direction === 'rtl') {
+				portal.setAttribute('dir', 'rtl');
+			} else {
+				portal.removeAttribute('dir');
+			}
+		}
+	}
+
+	getDirection(): 'ltr' | 'rtl' {
+		return this.direction;
 	}
 
 	async getContentScriptTheme(): Promise<'light' | 'dark' | null> {
