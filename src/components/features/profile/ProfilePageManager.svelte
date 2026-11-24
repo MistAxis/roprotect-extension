@@ -434,6 +434,27 @@
 		}
 	}
 
+	// Sits to the right of Roblox's "see all ›" affordance. The chevron lives
+	// inside a link, so mount after that link instead of the chevron itself —
+	// a span nested in the anchor would inherit its navigation and typography.
+	// Older layouts without a chevron keep the panel beside the heading.
+	function placeFriendsScanHost(header: Element, heading: Element, container: HTMLElement) {
+		const chevron = header.querySelector(FRIENDS_CAROUSEL_SELECTORS.HEADER_CHEVRON);
+		const action = chevron?.closest('a, button') ?? null;
+
+		if (action && action !== header && header.contains(action)) {
+			action.after(container);
+			return;
+		}
+
+		if (chevron) {
+			chevron.after(container);
+			return;
+		}
+
+		heading.after(container);
+	}
+
 	async function setupFriendsScanPanel() {
 		if (!showCarousel) return;
 		if (!get(settings)[SETTINGS_KEYS.FRIENDS_CHECK_ENABLED]) return;
@@ -449,7 +470,7 @@
 
 			const container = document.createElement('span');
 			container.className = COMPONENT_CLASSES.PROFILE_FRIENDS_SCAN_HOST;
-			heading.after(container);
+			placeFriendsScanHost(result.element, heading, container);
 
 			const component = mount(FriendsScanPanel, {
 				target: container,

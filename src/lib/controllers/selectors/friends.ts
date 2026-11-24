@@ -1,6 +1,9 @@
 export const FRIENDS_CAROUSEL_SELECTORS = {
 	CONTAINER: '.friends-carousel-container',
 	HEADER: '.react-friends-carousel-container .container-header.people-list-header',
+	// Roblox's "see all" affordance at the right end of the carousel header; the
+	// scan panel is mounted after it instead of beside the heading.
+	HEADER_CHEVRON: '.icon-chevron-heavy-right',
 	TILE: '.friends-carousel-tile',
 	// The 2026 carousel dropped .friend-tile-content; the tile itself is the
 	// stable anchor for the indicator (the headshot clips its own wrapper).

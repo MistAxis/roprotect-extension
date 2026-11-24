@@ -19,12 +19,13 @@
 	line-height: normal;
 }
 
-/* Profile friends carousel header: an inline row that follows the heading, so
-   it needs its own leading space instead of stretching against a chip row. */
+/* Profile friends carousel header: sits to the right of Roblox's "see all ›"
+   chevron instead of hugging the heading, so it carries its own leading padding
+   rather than borrowing the row's gap. */
 @utility rotector-profile-friends-scan-host {
 	@apply inline-flex items-center self-baseline align-middle;
 	line-height: normal;
-	margin-inline-start: 0.5rem;
+	padding-inline: 0.5rem;
 }
 
 @utility rotector-friends-scan {
